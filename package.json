@@ -1,0 +1,21 @@
+{
+  "name": "sealedclaw-trader",
+  "version": "1.0.0",
+  "description": "SealedClaw Trader - Sovereign iNFT Trading Agent",
+  "scripts": {
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "deploy": "npx hardhat run scripts/deploy.ts",
+    "deploy:testnet": "npx hardhat run scripts/deploy.ts --network galileo"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.6",
+    "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^16.4.5"
+  }
+}
