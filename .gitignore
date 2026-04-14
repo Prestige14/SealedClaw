@@ -1,9 +1,36 @@
+# ── Node.js / Hardhat ──────────────────────────────────────────────────────
 node_modules/
 dist/
 cache/
 artifacts/
 typechain-types/
-.env
 coverage/
 coverage.json
 deployments/
+
+# ── Environment & Secrets ──────────────────────────────────────────────────
+.env
+tee-worker/.env
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+*.pyc
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ── TEE Worker Runtime Artifacts ───────────────────────────────────────────
+# JSON output files generated during test/simulation runs
+tee-worker/test_output.json
+tee-worker/*.json
+
+# ── OS & Editor ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+*.swp

@@ -1,0 +1,24 @@
+# SealedClaw TEE Worker — Python Dependencies
+#
+# Install with: pip install -r requirements.txt
+#
+# Minimum Python version: 3.11 (required for dict | None union type hints)
+
+# Ethereum ABI encoding/decoding — used to reproduce abi.encodePacked & abi.encode
+eth-abi>=4.0.0
+
+# Ethereum keccak256 hashing (choose pycryptodome backend for Windows compatibility)
+eth-hash[pycryptodome]>=0.5.2
+
+# Ethereum key utilities — used for v recovery in ECDSA signature
+eth-keys>=0.4.0
+
+# ECDSA curve operations (SECP256k1) — used for keypair generation & DER decoding
+# Note: cryptography library provides the SECP256k1 primitives directly
+cryptography>=41.0.0
+
+# AES-256-GCM encryption for memory sealing (included in cryptography above)
+# No separate dependency needed — AESGCM is part of cryptography.hazmat
+
+# Environment variable loading from .env files
+python-dotenv>=1.0.0
