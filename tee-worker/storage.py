@@ -3,9 +3,9 @@ import json
 import requests
 from typing import Optional
 
-# 0G Storage Nodes Endpoints (Local Simulator per phase 3 specs)
-STORAGE_UPLOAD_URL = "http://127.0.0.1:5678/tx"
-STORAGE_DOWNLOAD_URL = "http://127.0.0.1:5678/file"
+# 0G Storage Nodes Endpoints (Testnet per Phase 3 specs)
+STORAGE_UPLOAD_URL = "https://rpc-storage-testnet.0g.ai/tx"
+STORAGE_DOWNLOAD_URL = "https://rpc-storage-testnet.0g.ai/file"
 
 def store_to_0g_storage(token_id: int, encrypted_blob: dict) -> str:
     """

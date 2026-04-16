@@ -28,3 +28,6 @@ requests>=2.31.0
 
 # Web3 for Chainlink RPC interactions
 web3>=6.10.0
+
+# OpenAI for OpenClaw SDK NLP intent parsing
+openai>=1.12.0

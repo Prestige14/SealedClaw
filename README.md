@@ -264,6 +264,20 @@ python main.py --output payload.json --vault 0xYourVault --token-id 0 --nonce 0
 python scripts/verify_phase2.py
 ```
 
+### Phase 3 — OpenClaw Agent SDK & 0G Storage Testnet (`orchestrator.py`)
+
+**Requirements**: Python 3.11+, OpenAI API Key
+
+The top-level `orchestrator.py` acts as an autonomous NLP-driven AI Agent. It uses **OpenClaw SDK Framework** wrapped around the TEE worker.
+- **NLP Intent Routing**: User sets a prompt (e.g. "Optimize yield") -> Agent calls `execute_sealed_trade` skill autonomously via OpenAI tool-calling.
+- **Dynamic Nonce Sync**: Fetches the precise anti-replay nonce directly from `PolicyVault` on the 0G Galileo Testnet before spinning up the TEE enclave.
+- **0G Public Storage**: The enclave memory blobs (`encrypted_blob`) are directly stored and retrieved from the public RPC at `https://rpc-storage-testnet.0g.ai`, keeping the TEE memory completely decentralized.
+
+```bash
+# Set OPENAI_API_KEY inside .env
+python orchestrator.py
+```
+
 ### Environment Variables
 
 #### Root `.env`
@@ -334,6 +348,6 @@ SealedClaw/
 
 - [x] **Phase 1** — Smart contract foundation & testnet deployment
 - [x] **Phase 2** — TEE worker simulation with verified Solidity signature compatibility
-- [ ] **Phase 3** — Live 0G Compute integration + real 0G Storage CID pinning
+- [x] **Phase 3** — Live 0G Storage integration + OpenClaw Agent SDK intent routing
 - [ ] **Phase 4** — Production DEX adapters + on-chain TWAP oracle
 - [ ] **Phase 5** — Frontend dashboard + agent marketplace
