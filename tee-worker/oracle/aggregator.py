@@ -66,62 +66,99 @@ def _base_price(asset: str) -> float:
 # ---------------------------------------------------------------------------
 
 def fetch_pyth_price(asset: str) -> float:
-    """
-    Fetch the current asset price from Pyth Network.
+    import requests
+    
+    price_ids = {
+        "ETH": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+        "BTC": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+    }
+    
+    price_id = price_ids.get(asset.upper())
+    if not price_id:
+        print(f"[ORACLE] Pyth price ID for {asset} not found. Using fallback.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.005, 0.005)
+        return round(base * (1 + noise_pct), 4)
 
-    Returns a simulated price with slight random noise to mimic real
-    oracle variability.
-
-    Parameters
-    ----------
-    asset : str
-        Asset ticker symbol (e.g. ``"ETH"``, ``"BTC"``).
-
-    Returns
-    -------
-    float
-        Current asset price in USD as reported by Pyth.
-
-    Notes
-    -----
-    # In production: call Pyth Network Hermes API
-    #   GET https://hermes.pyth.network/v2/updates/price/latest
-    #   with price_ids=[<PYTH_FEED_ID_FOR_ASSET>]
-    # 0G INTEGRATION: Route via 0G Compute verified data channel.
-    """
-    base = _base_price(asset)
-    # Simulate up to ±0.5% noise around base price
-    noise_pct = random.uniform(-0.005, 0.005)
-    return round(base * (1 + noise_pct), 4)
-
+    url = f"https://hermes.pyth.network/v2/updates/price/latest?ids[]={price_id}"
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        parsed = data.get("parsed", [])
+        if not parsed:
+            raise ValueError("No parsed data in Pyth response")
+        
+        price_info = parsed[0]["price"]
+        price_str = price_info["price"]
+        expo = price_info["expo"]
+        
+        actual_price = float(price_str) * (10 ** expo)
+        return round(actual_price, 4)
+    except Exception as e:
+        print(f"[ORACLE] Pyth fetch failed: {e}. Using fallback.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.005, 0.005)
+        return round(base * (1 + noise_pct), 4)
 
 def fetch_chainlink_price(asset: str) -> float:
-    """
-    Fetch the current asset price from Chainlink Data Feeds.
+    import os
+    from web3 import Web3
 
-    Returns a simulated price that is slightly offset from Pyth to
-    represent realistic inter-oracle variance.
+    RPC_URL = os.getenv("RPC_URL", "https://rpc.ankr.com/eth_sepolia")
+    
+    addresses = {
+        "ETH": "0x694AA1769357215DE4FAC081bf1f309aDC325306", # ETH/USD Sepolia
+        "BTC": "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43", # BTC/USD Sepolia
+    }
+    
+    aggregator_address = addresses.get(asset.upper())
+    if not aggregator_address:
+        print(f"[ORACLE] Chainlink address for {asset} not found. Using fallback.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.004, 0.006)
+        return round(base * (1 + noise_pct), 4)
 
-    Parameters
-    ----------
-    asset : str
-        Asset ticker symbol (e.g. ``"ETH"``, ``"BTC"``).
+    try:
+        web3 = Web3(Web3.HTTPProvider(RPC_URL))
+        if not web3.is_connected():
+            raise ConnectionError("Web3 provider not connected")
 
-    Returns
-    -------
-    float
-        Current asset price in USD as reported by Chainlink.
+        abi = [
+            {
+                "inputs": [],
+                "name": "latestRoundData",
+                "outputs": [
+                    {"internalType": "uint80", "name": "roundId", "type": "uint80"},
+                    {"internalType": "int256", "name": "answer", "type": "int256"},
+                    {"internalType": "uint256", "name": "startedAt", "type": "uint256"},
+                    {"internalType": "uint256", "name": "updatedAt", "type": "uint256"},
+                    {"internalType": "uint80", "name": "answeredInRound", "type": "uint80"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "decimals",
+                "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
 
-    Notes
-    -----
-    # In production: call Chainlink Data Feeds on 0G Chain
-    #   AggregatorV3Interface.latestRoundData() on the deployed feed contract.
-    # 0G INTEGRATION: Use 0G Chain RPC to call the Chainlink feed contract.
-    """
-    base = _base_price(asset)
-    # Chainlink tends to lag slightly — simulate with a small systematic offset
-    noise_pct = random.uniform(-0.004, 0.006)
-    return round(base * (1 + noise_pct), 4)
+        contract = web3.eth.contract(address=aggregator_address, abi=abi)
+        decimals = contract.functions.decimals().call()
+        round_data = contract.functions.latestRoundData().call()
+        
+        price = float(round_data[1]) / (10 ** decimals)
+        return round(price, 4)
+
+    except Exception as e:
+        print(f"[ORACLE] Chainlink fetch failed: {e}. Using fallback.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.004, 0.006)
+        return round(base * (1 + noise_pct), 4)
 
 
 def fetch_twap_price(asset: str) -> float:

@@ -34,3 +34,10 @@ tee-worker/*.json
 Thumbs.db
 .vscode/settings.json
 *.swp
+
+# ── Relayer & Orchestrator Artifacts ───────────────────────────────────────
+tee_payload.json
+setup_blockchain.py
+scratch/
+.latest_root_hash_*
+.mock_storage_*.json

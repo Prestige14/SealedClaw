@@ -48,6 +48,7 @@ from enclave.crypto import encrypt_memory, decrypt_memory
 from oracle.aggregator import get_median_price, OracleDeviationError
 from agent.strategy import make_trading_decision, build_updated_memory
 from payload.builder import build_final_payload
+from storage import store_to_0g_storage, fetch_from_0g_storage
 
 
 # ---------------------------------------------------------------------------
@@ -161,9 +162,10 @@ def run_tee_worker_cycle() -> dict:
 
     _section("MEMORY READ")
 
+    token_id: int = int(os.getenv("TOKEN_ID", "0"))
+
     # In production: fetch encrypted blob from 0G Storage using the tokenId key
-    # 0G INTEGRATION: previous_encrypted_blob = fetch_from_0g_storage(token_id)
-    previous_encrypted_blob: dict | None = None  # Simulates first run (no prior state)
+    previous_encrypted_blob: dict | None = fetch_from_0g_storage(token_id)
 
     previous_memory: dict | None = None
     if previous_encrypted_blob is not None:
@@ -183,7 +185,6 @@ def run_tee_worker_cycle() -> dict:
     _section("AI AGENT")
 
     # Read environment config
-    token_id: int = int(os.getenv("TOKEN_ID", "0"))
     current_nonce: int = int(os.getenv("CURRENT_NONCE", "0"))
     policy_vault_address: str = os.getenv(
         "POLICY_VAULT_ADDRESS", "0x0000000000000000000000000000000000001234"
@@ -251,9 +252,8 @@ def run_tee_worker_cycle() -> dict:
         f"         nonce_gcm  : {encrypted_blob['nonce_gcm']}\n"
         f"         tag        : {encrypted_blob['tag']}"
     )
-    print("\n--- Simulated: Upload encrypted blob to 0G Storage ---")
-    # 0G INTEGRATION: store_to_0g_storage(key=f"sealedclaw:{token_id}:memory",
-    #                                      value=encrypted_blob)
+    print("\n--- Upload encrypted blob to 0G Storage ---")
+    store_to_0g_storage(token_id, encrypted_blob)
 
     # ── Verify round-trip decrypt (sanity check) ──────────────────────────────
     try:

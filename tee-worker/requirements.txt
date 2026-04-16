@@ -22,3 +22,9 @@ cryptography>=41.0.0
 
 # Environment variable loading from .env files
 python-dotenv>=1.0.0
+
+# HTTP requests for external Oracle and Storage APIs
+requests>=2.31.0
+
+# Web3 for Chainlink RPC interactions
+web3>=6.10.0

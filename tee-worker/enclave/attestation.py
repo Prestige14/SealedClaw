@@ -64,6 +64,15 @@ def generate_attestation_report(tee_pub_key_address: str) -> dict[str, Any]:
     if not tee_pub_key_address.startswith("0x"):
         raise ValueError("tee_pub_key_address must be a 0x-prefixed Ethereum address.")
 
+    try:
+        import requests
+        url = f"http://localhost:8080/attestation?pubkey={tee_pub_key_address}"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"[ATTESTATION] Warning: Live TEE attestation failed ({e}). Falling back to mock report.")
+
     timestamp: int = int(time.time())
     nonce_hex: str = secrets.token_hex(32)
 
