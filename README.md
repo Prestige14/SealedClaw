@@ -10,12 +10,12 @@ SealedClaw is an autonomous on-chain trading agent built on the 0G ecosystem. Ea
 
 | Contract | Address |
 |---|---|
-| **SealedClawAgent** (ERC-7857 iNFT) | [`0xD836bC71C9ECAe447F3f323d9C4E982A0ad178D2`](https://chainscan-galileo.0g.ai/address/0xD836bC71C9ECAe447F3f323d9C4E982A0ad178D2) |
-| **PolicyVault** | [`0x60aC7E3E0e7D498fCa1d7F526BB21F90d1E43D5F`](https://chainscan-galileo.0g.ai/address/0x60aC7E3E0e7D498fCa1d7F526BB21F90d1E43D5F) |
+| **SealedClawAgent** (ERC-7857 iNFT) | [`0xBe9Db7735B06FEa557f3Aa18317eaB229BA6ebC5`](https://chainscan-galileo.0g.ai/address/0xBe9Db7735B06FEa557f3Aa18317eaB229BA6ebC5) |
+| **PolicyVault** | [`0xFAB206535E521be5B24AeEf30b3CB71f7bf21459`](https://chainscan-galileo.0g.ai/address/0xFAB206535E521be5B24AeEf30b3CB71f7bf21459) |
 
 - **Network**: 0G Galileo Testnet · **Chain ID**: `16602`
 - **RPC**: `https://evmrpc-testnet.0g.ai`
-- **Deployed**: 2026-04-12
+- **Deployed**: 2026-04-15
 - **Deployer**: `0x1960C0c9A89755eA6E56758C8fFb1e03180B1521`
 
 ---
