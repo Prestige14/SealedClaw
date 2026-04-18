@@ -149,6 +149,12 @@ def verify_attestation_mock(report: dict[str, Any], expected_pub_key: str) -> bo
         )
         return False
 
+    # Verify mock signature format
+    signature = report.get("quote_signature", "")
+    if not signature.startswith("mock:"):
+        print("[ATTESTATION] Verification FAILED: Invalid mock signature format.")
+        return False
+
     # Check timestamp freshness (must be within last 5 minutes in simulation)
     age_seconds = int(time.time()) - report.get("timestamp", 0)
     if age_seconds > 300:

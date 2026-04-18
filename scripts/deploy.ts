@@ -1,3 +1,4 @@
+// Run script: npx hardhat run scripts/deploy.ts --network galileo
 import { ethers } from "hardhat";
 import fs from "fs";
 import path from "path";
@@ -17,7 +18,7 @@ async function main() {
   const agentNFT = await SealedClawAgent.deploy(0n);
   await agentNFT.waitForDeployment();
   const agentNFTAddress = await agentNFT.getAddress();
-  console.log(`✅ SealedClawAgent → ${agentNFTAddress}`);
+  console.log(`SealedClawAgent deployed to: ${agentNFTAddress}`);
 
   // ── 2. Resolve TEE Public Key ─────────────────────────────────────────────
   // In production: replace with the actual Ethereum address derived from
@@ -38,12 +39,12 @@ async function main() {
   }
 
   // ── 3. Deploy PolicyVault ─────────────────────────────────────────────────
-  console.log("Deploying PolicyVault...");
+  console.log("\nDeploying PolicyVault...");
   const PolicyVault = await ethers.getContractFactory("PolicyVault");
   const vault = await PolicyVault.deploy(agentNFTAddress, teeEnclaveAddr);
   await vault.waitForDeployment();
   const vaultAddress = await vault.getAddress();
-  console.log(`✅ PolicyVault         → ${vaultAddress}`);
+  console.log(`PolicyVault deployed to: ${vaultAddress}`);
 
   // ── 4. Save deployment info ───────────────────────────────────────────────
   const deploymentsDir = path.join(__dirname, "..", "deployments");

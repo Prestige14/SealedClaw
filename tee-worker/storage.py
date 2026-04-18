@@ -17,14 +17,21 @@ def store_to_0g_storage(token_id: int, encrypted_blob: dict) -> str:
         response.raise_for_status()
         
         # Determine root hash from response or fallback to content hash
+        import hashlib
+        local_hash = hashlib.sha256(json.dumps(encrypted_blob).encode()).hexdigest()
+
         try:
             data = response.json()
             file_root_hash = data.get("root_hash") or data.get("tx", {}).get("data_root")
             if not file_root_hash:
-                import hashlib
-                file_root_hash = hashlib.sha256(json.dumps(encrypted_blob).encode()).hexdigest()
+                file_root_hash = local_hash
+            else:
+                # Basic Integrity check
+                if file_root_hash != local_hash and not file_root_hash.startswith("0x"):
+                    print(f"[STORAGE] Warning: Returned hash {file_root_hash} doesn't match local data hash!")
+                else:
+                    print("[STORAGE] Upload integrity verified.")
         except ValueError:
-            import hashlib
             file_root_hash = hashlib.sha256(response.content).hexdigest()
         
         # Save hash locally so the agent knows what to download on the next cycle

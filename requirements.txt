@@ -1,0 +1,7 @@
+web3
+openai
+python-dotenv
+python-telegram-bot>=20.0
+cryptography
+eth-abi
+requests

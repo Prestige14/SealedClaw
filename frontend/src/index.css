@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-background text-gray-100 antialiased;
+  background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0a0a0c 100%);
+  min-height: 100vh;
+}
+
+.glass-card {
+  @apply bg-surface/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300;
+}
+
+.glass-card:hover {
+  @apply border-white/20 -translate-y-1;
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
+}
+
+.btn-primary {
+  @apply px-6 py-3 bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-500 hover:to-teal-400 
+         text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50;
+}
+
+.btn-danger {
+  @apply px-6 py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 
+         text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50;
+}
+
+.input-field {
+  @apply w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:outline-none focus:border-blue-500/50 transition-colors;
+}
+
+/* Custom glow effect */
+.glow-text {
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}

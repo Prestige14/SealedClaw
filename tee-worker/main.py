@@ -44,7 +44,7 @@ load_dotenv()
 
 from enclave.keys import generate_ecdsa_keypair, generate_aes_key
 from enclave.attestation import generate_attestation_report, verify_attestation_mock
-from enclave.crypto import encrypt_memory, decrypt_memory
+from enclave.crypto import encrypt_memory, decrypt_memory, re_encrypt_for_handover
 from oracle.aggregator import get_median_price, OracleDeviationError
 from agent.strategy import make_trading_decision, build_updated_memory
 from payload.builder import build_final_payload
@@ -70,7 +70,7 @@ def _hr() -> None:
 # Main simulation
 # ---------------------------------------------------------------------------
 
-def run_tee_worker_cycle() -> dict:
+def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | None = None) -> dict:
     """
     Execute one full SealedClaw TEE worker cycle.
 
@@ -195,6 +195,7 @@ def run_tee_worker_cycle() -> dict:
         median_price=median_price,
         previous_memory=previous_memory,
         token_id=token_id,
+        is_pending_transfer=is_pending_transfer,
     )
 
     print(
@@ -242,9 +243,13 @@ def run_tee_worker_cycle() -> dict:
         cycle_number=(previous_memory or {}).get("cycle", -1) + 1,
     )
 
-    print("[MEMORY] Encrypting memory state for 0G Storage...")
-    # TEE BOUNDARY: encryption happens inside enclave before data exits
-    encrypted_blob: dict = encrypt_memory(updated_memory, aes_key)
+    if is_pending_transfer and new_owner:
+        print(f"[MEMORY] Re-encrypting memory for handover to new owner {new_owner}...")
+        encrypted_blob: dict = re_encrypt_for_handover(updated_memory, new_owner)
+    else:
+        print("[MEMORY] Encrypting memory state for 0G Storage...")
+        # TEE BOUNDARY: encryption happens inside enclave before data exits
+        encrypted_blob: dict = encrypt_memory(updated_memory, aes_key)
 
     print(
         f"[MEMORY] Encrypted blob:\n"
@@ -303,6 +308,8 @@ if __name__ == "__main__":
     parser.add_argument("--vault", type=str, default=None, help="PolicyVault contract address (overrides POLICY_VAULT_ADDRESS env)")
     parser.add_argument("--token-id", type=int, default=None, dest="token_id", help="ERC-7857 token ID (overrides TOKEN_ID env)")
     parser.add_argument("--nonce", type=int, default=None, help="Current on-chain nonce (overrides CURRENT_NONCE env)")
+    parser.add_argument("--pending-transfer", action="store_true", help="Flag indicating token is in handover window")
+    parser.add_argument("--new-owner", type=str, default=None, help="Ethereum address of the new owner during handover")
     args = parser.parse_args()
 
     # Apply CLI overrides to environment so run_tee_worker_cycle() picks them up
@@ -314,7 +321,10 @@ if __name__ == "__main__":
         os.environ["CURRENT_NONCE"] = str(args.nonce)
 
     try:
-        result = run_tee_worker_cycle()
+        result = run_tee_worker_cycle(
+            is_pending_transfer=args.pending_transfer,
+            new_owner=args.new_owner
+        )
         
         # LOGIKA BARU: Jika flag --output digunakan, simpan payload ke file JSON
         if args.output:

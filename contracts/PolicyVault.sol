@@ -24,6 +24,11 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     using ECDSA for bytes32;
 
     // ── Structs ───────────────────────────────────────────────────────────────
+    struct PendingTransfer {
+        address newOwner;
+        uint256 transferInitiatedAt;
+    }
+
     struct Policy {
         uint256 maxDrawdown;       // basis points (e.g. 1000 = 10%)
         uint256 riskMaxPercent;    // basis points, max single-trade size
@@ -39,6 +44,10 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
 
     // TEE enclave public key (stored as Ethereum address = keccak(pubkey)[12:])
     address public teeEnclavePubKey;
+
+    // Transfer protocol tracking
+    mapping(uint256 => PendingTransfer) public pendingTransfers;
+    uint256 public constant TRANSFER_COOLDOWN = 48 hours;
 
     // [FIX 1] Nonces stored separately — never reset by updatePolicy
     mapping(uint256 => uint256) public nonces;
@@ -59,6 +68,8 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
 
     // ── Events ────────────────────────────────────────────────────────────────
     event PolicyUpdated(uint256 indexed tokenId);
+    event TransferInitiated(uint256 indexed tokenId, address newOwner, uint256 timestamp);
+    event TransferFinalized(uint256 indexed tokenId, address newOwner, uint256 timestamp);
     event StrategyExecuted(
         uint256 indexed tokenId,
         bytes   strategyData,
@@ -179,6 +190,12 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         // ── 1. Deadline check ────────────────────────────────────────────────
         require(block.timestamp <= deadline, "Transaction expired");
 
+        // ── 1.5. Enforce Reduce-Only Mode during PendingTransfer ─────────────
+        if (pendingTransfers[tokenId].transferInitiatedAt > 0) {
+            (string memory action, , ) = abi.decode(strategyData, (string, uint256, string));
+            require(keccak256(bytes(action)) == keccak256(bytes("REDUCE_ONLY")), "Must be REDUCE_ONLY during transfer");
+        }
+
         // ── 2. Load policy ───────────────────────────────────────────────────
         Policy storage policy = policies[tokenId];
         require(policy.dailyLimit > 0, "Policy not set");
@@ -245,6 +262,31 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         teeEnclavePubKey = _newKey;
         lastKeyRotation  = block.timestamp;
         emit TeeKeyRotated(_newKey, block.timestamp);
+    }
+
+    // ── Handover Protocol ─────────────────────────────────────────────────────
+    
+    function initiateTransfer(uint256 tokenId, address newOwner) external onlyTokenOwner(tokenId) whenNotPaused {
+        require(newOwner != address(0), "Invalid new owner");
+        pendingTransfers[tokenId] = PendingTransfer({
+            newOwner: newOwner,
+            transferInitiatedAt: block.timestamp
+        });
+        emit TransferInitiated(tokenId, newOwner, block.timestamp);
+    }
+    
+    function finalizeTransfer(uint256 tokenId) external whenNotPaused {
+        PendingTransfer memory pt = pendingTransfers[tokenId];
+        require(pt.transferInitiatedAt > 0, "No pending transfer");
+        require(block.timestamp >= pt.transferInitiatedAt + TRANSFER_COOLDOWN, "Transfer cooldown active");
+        
+        // Revoke TEE Enclave PubKey for safety
+        teeEnclavePubKey = address(0);
+        
+        address newOwner = pt.newOwner;
+        delete pendingTransfers[tokenId];
+        
+        emit TransferFinalized(tokenId, newOwner, block.timestamp);
     }
 
     // ── View Helpers ──────────────────────────────────────────────────────────

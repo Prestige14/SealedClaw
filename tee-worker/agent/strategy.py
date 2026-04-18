@@ -11,6 +11,15 @@ running as a sealed inference model inside the 0G Compute enclave.
 
 # TEE BOUNDARY: All decision logic runs inside the enclave. The resulting
 # decision dict is signed before leaving the secure boundary.
+# 
+# 0G COMPUTE / ML INTEGRATION:
+# The current strategy based on static thresholds is a placeholder. To integrate a real
+# ML model (e.g. Scikit-learn, PyTorch, or ONNX format), follow these steps:
+# 1. Package the ML model alongside the TEE enclave or fetch it via 0G Storage.
+# 2. Add dependencies like `numpy` or `onnxruntime` to `requirements.txt`.
+# 3. Replace the `make_trading_decision` logic below with model inference.
+# 4. Use `previous_memory` to provide context (e.g., historical price windows).
+# 5. Ensure inference runs entirely *within* the TEE (enclave memory).
 """
 
 from typing import Any
@@ -43,6 +52,7 @@ def make_trading_decision(
     median_price: float,
     previous_memory: dict[str, Any] | None,
     token_id: int,
+    is_pending_transfer: bool = False,
 ) -> dict[str, Any]:
     """
     Produce a signed-ready trading decision based on current price and memory.
@@ -87,6 +97,20 @@ def make_trading_decision(
     #   a sealed ML inference call via 0G Compute Inference API.
     """
     asset: str = "ETH"
+
+    # -----------------------------------------------------------------------
+    # Case 0: Handover pending — force REDUCE_ONLY mode
+    # -----------------------------------------------------------------------
+    if is_pending_transfer:
+        return {
+            "action": ACTION_REDUCE_ONLY,
+            "amount_wei": 0,
+            "asset": asset,
+            "rationale": "Transfer pending. REDUCE_ONLY to secure portfolio for handover.",
+            "current_price": median_price,
+            "price_change_pct": None,
+            "token_id": token_id,
+        }
 
     # -----------------------------------------------------------------------
     # Case 1: First execution — no historical baseline available

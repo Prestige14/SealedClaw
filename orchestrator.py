@@ -11,6 +11,20 @@ from openai import OpenAI
 load_dotenv()
 
 # =========================================================================
+# HELPER FUNCTIONS
+# =========================================================================
+
+def call_with_retry(func, max_retries=3, backoff_factor=2):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            print(f"[Retry] Attempt {attempt+1} failed ({e}). Retrying ...")
+            time.sleep(backoff_factor ** attempt)
+
+# =========================================================================
 # OPENCLAW SDK (Agent Framework Simulation)
 # =========================================================================
 
@@ -148,18 +162,31 @@ def execute_sealed_trade(intent: str):
     if balance_wei == 0:
         print("[-] Warning: Relayer has 0 ETH! Transaction will likely fail due to insufficient funds.")
 
-    print(f"\n[1] Fetching Dynamic Nonce for Token ID {token_id_env} from PolicyVault...")
+    print(f"\n[1] Fetching Dynamic Nonce and Pending Transfer for Token ID {token_id_env} from PolicyVault...")
     policy_vault_address_checksum = web3.to_checksum_address(policy_vault_address)
     abi_nonce = [
         {"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "nonces", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}
     ]
+    abi_pending = [
+        {"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "pendingTransfers", "outputs": [{"internalType": "address", "name": "newOwner", "type": "address"}, {"internalType": "uint256", "name": "transferInitiatedAt", "type": "uint256"}], "stateMutability": "view", "type": "function"}
+    ]
     contract_nonce = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_nonce)
+    contract_pending = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_pending)
     
     try:
-        current_nonce = contract_nonce.functions.nonces(token_id_env).call()
-        print(f"[+] Current On-Chain Nonce: {current_nonce}\n")
+        current_nonce = call_with_retry(lambda: contract_nonce.functions.nonces(token_id_env).call())
+        print(f"[+] Current On-Chain Nonce: {current_nonce}")
+        
+        pending_transfer = call_with_retry(lambda: contract_pending.functions.pendingTransfers(token_id_env).call())
+        new_owner = pending_transfer[0]
+        transfer_initiated_at = pending_transfer[1]
+        is_pending_transfer = transfer_initiated_at > 0
+        if is_pending_transfer:
+            print(f"[+] Pending Transfer Detected: newOwner={new_owner}\n")
+        else:
+            print("[+] No pending transfer.\n")
     except Exception as e:
-        print(f"[-] Failed to fetch nonce from contract: {e}")
+        print(f"[-] Failed to fetch contract state: {e}")
         return f"FAILED: {e}"
 
     # ---------------------------------------------------------
@@ -170,12 +197,16 @@ def execute_sealed_trade(intent: str):
     print("[2] Triggering TEE Worker...")
     try:
         # Pass dynamic nonce to tee-worker
-        result = subprocess.run(
-            ["python", "tee-worker/main.py", "--output", output_filename, "--nonce", str(current_nonce)],
+        cmd = ["python", "tee-worker/main.py", "--output", output_filename, "--nonce", str(current_nonce)]
+        if is_pending_transfer:
+            cmd.extend(["--pending-transfer", "--new-owner", str(new_owner)])
+            
+        result = call_with_retry(lambda: subprocess.run(
+            cmd,
             capture_output=True,
             text=True,
             check=True
-        )
+        ))
         print("[+] TEE Worker executed successfully.\n")
         print("    --- TEE Worker Console Output ---")
         print(result.stdout)
@@ -247,7 +278,7 @@ def execute_sealed_trade(intent: str):
     # Build Transaction
     try:
         print("[*] Estimating gas and building transaction...")
-        tx_base = contract.functions.executeWithProof(
+        tx_base = call_with_retry(lambda: contract.functions.executeWithProof(
             token_id, 
             Web3.to_bytes(hexstr=strategy_data), 
             trade_amount,
@@ -256,15 +287,15 @@ def execute_sealed_trade(intent: str):
             deadline
         ).build_transaction({
             "from": relayer_account.address,
-            "nonce": web3.eth.get_transaction_count(relayer_account.address),
-        })
+            "nonce": call_with_retry(lambda: web3.eth.get_transaction_count(relayer_account.address)),
+        }))
 
         # Sign Transaction
         signed_tx = web3.eth.account.sign_transaction(tx_base, relayer_pk)
         
         # Send Transaction
         print("[*] Broadcasting transaction...")
-        tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        tx_hash = call_with_retry(lambda: web3.eth.send_raw_transaction(signed_tx.raw_transaction))
         
         print(f"\n[+] SUCCESS! Transaction broadcasted.")
         print(f"[+] TX Hash: {web3.to_hex(tx_hash)}")
@@ -291,26 +322,42 @@ def execute_sealed_trade(intent: str):
 # MAIN EXECUTION: Agent Flow
 # =========================================================================
 
+# =========================================================================
+# GLOBAL AGENT INITIALIZATION
+# =========================================================================
+
+# Instantiate the wrapper Agent
+agent = OpenClawAgent(name="SealedClaw-0G-Oracle")
+
+# Create the Trading Skill that wraps our Web3/TEE subprocess routine
+trade_skill = OpenClawSkill(
+    name="execute_sealed_trade",
+    description="Triggers the secure TEE enclave to compute trading strategies based on intent and relays the transaction to 0G Blockchain.",
+    func=execute_sealed_trade
+)
+
+# Register the skill to the Agent
+agent.register_skill(trade_skill)
+
+def process_intent(user_prompt: str):
+    """
+    Main entry point for external callers (e.g. Telegram Bot).
+    Returns the result of the agent execution (Success/Fail + TxHash).
+    """
+    return agent.run(user_prompt)
+
+# =========================================================================
+# MAIN EXECUTION (CI/CD / Manual CLI)
+# =========================================================================
+
 if __name__ == "__main__":
     print("============================================================")
-    print("  Initialize OpenClaw SDK")
+    print("  Initialize OpenClaw SDK (Manual Test Mode)")
     print("============================================================")
-    
-    # Instantiate the wrapper Agent
-    agent = OpenClawAgent(name="SealedClaw-0G-Oracle")
-    
-    # Create the Trading Skill that wraps our Web3/TEE subprocess routine
-    trade_skill = OpenClawSkill(
-        name="execute_sealed_trade",
-        description="Triggers the secure TEE enclave to compute trading strategies based on intent and relays the transaction to 0G Blockchain.",
-        func=execute_sealed_trade
-    )
-    
-    # Register the skill to the Agent
-    agent.register_skill(trade_skill)
     
     # Simulate a user intent/prompt
     user_prompt = "Tolong optimasi yield saya hari ini dengan risiko maksimal 5%."
     
     # Run the Agent autonomously
-    agent.run(user_prompt)
+    result = process_intent(user_prompt)
+    print(f"\nFinal Agent Result: {result}")

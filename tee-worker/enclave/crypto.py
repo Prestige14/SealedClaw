@@ -233,6 +233,40 @@ def encrypt_memory(memory_data: dict[str, Any], aes_key: bytes) -> dict[str, str
     }
 
 
+def re_encrypt_for_handover(memory_data: dict[str, Any], new_owner_address: str) -> dict[str, str]:
+    """
+    Encrypts memory for handover, simulating AES key wrapping for the new owner.
+
+    This function simulates generating a new AES Transfer Key, encrypting the agent memory
+    with it, and wrapping that Transfer Key using the new owner's public key (represented
+    by new_owner_address).
+    
+    Parameters
+    ----------
+    memory_data : dict[str, Any]
+        Agent memory dict to encrypt.
+    new_owner_address: str
+        Ethereum address of the new owner.
+
+    Returns
+    -------
+    dict[str, str]
+        Encrypted blob with simulated wrapped transfer key.
+    """
+    # 1. Simulate deriving a new AES key for the transfer
+    transfer_aes_key = os.urandom(32)
+    
+    # 2. Encrypt memory payload using the standard method but with our new key
+    encrypted_blob = encrypt_memory(memory_data, transfer_aes_key)
+    
+    # 3. Simulate wrapping the transfer key with the new owner's public key
+    # In production, this uses RSA/ECIES with new owner's actual public key
+    simulated_wrapped_key = f"wrapped_key_for_{new_owner_address.lower()}:{transfer_aes_key.hex()}"
+    encrypted_blob["wrapped_transfer_key"] = simulated_wrapped_key
+    
+    return encrypted_blob
+
+
 def decrypt_memory(encrypted: dict[str, str], aes_key: bytes) -> dict[str, Any]:
     """
     Decrypt an AES-256-GCM encrypted memory blob retrieved from 0G Storage.
