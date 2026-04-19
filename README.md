@@ -12,8 +12,8 @@ The following infrastructure is deployed and verified on the 0G Galileo Testnet:
 
 | Contract | Address |
 |---|---|
-| **SealedClawAgent** (ERC-7857 iNFT) | [`0x0D49E6f39370F3b01a87054c518C57bB729023E5`](https://chainscan-galileo.0g.ai/address/0x0D49E6f39370F3b01a87054c518C57bB729023E5) |
-| **PolicyVault** (Risk & Handover) | [`0x03dEB78c61D8e3463EE7918066de2D9Ed7cF5186`](https://chainscan-galileo.0g.ai/address/0x03dEB78c61D8e3463EE7918066de2D9Ed7cF5186) |
+| **SealedClawAgent** (ERC-7857 iNFT) | [`0xA19c38b95ac185ae77ee29A725E5b17C1cBFDa00`](https://chainscan-galileo.0g.ai/address/0xA19c38b95ac185ae77ee29A725E5b17C1cBFDa00) |
+| **PolicyVault** (Risk & Handover) | [`0x3eC0166E98c48E57969c82A68Fa60974F94157B4`](https://chainscan-galileo.0g.ai/address/0x3eC0166E98c48E57969c82A68Fa60974F94157B4) |
 
 - **Network**: 0G Galileo Testnet · **Chain ID**: `16602`
 - **RPC**: `https://evmrpc-testnet.0g.ai`
@@ -125,16 +125,30 @@ SealedClaw introduces a **Secure Handover Protocol** for Agentic iNFTs, allowing
 
 ---
 
-## Phase 5 - Telegram Bot & Web Dashboard
+## Phase 5 - Frontend Dashboard & Telegram Bot Integration
 
 SealedClaw is now a complete end-to-end ecosystem:
 
-### 1. Telegram NLP Interaction
+### 1. Web Dashboard (Premium UI)
+A React-based SPA in the `frontend/` directory providing a visual cockpit for the SealedClaw ecosystem:
+- **Contract Capability Detection**: Hybrid UI that automatically detects if the deployed contract is Legacy or Upgraded via silent `eth_call` probes.
+- **Real-Time Portfolio Allocation**: High-performance dashboard with Recharts visualization for asset allocation.
+- **iNFT Inventory Management**: Automatic detection and one-click selection of owned Agentic iNFTs.
+- **Sovereign Accounting**: Supports the new **Per-TokenID Vault** system, allowing each agent to have its own isolated balance.
+
+### 2. Telegram NLP Interaction
 - Users chat with their agent via **Telegram**, powered by the **OpenClaw SDK**.
 - Messages processed as *Intents* (e.g., "Optimize yield with 5% risk").
+- Enclave-verified execution triggered directly from chat.
 
-### 2. Web Dashboard (Premium UI)
-- A React-based SPA in the `frontend/` directory providing a visual dashboard for Minting, Depositing, and Handover Protocol interaction.
+---
+
+## 🛠 Feature Unfreeze: Per-TokenID Withdrawal
+
+In the final submission phase, we introduced **Enhanced Accounting** to `PolicyVault.sol`:
+- **Legacy Path**: Standard `deposit()`/`withdraw(amount)` for backward compatibility with existing testnet funds.
+- **Sovereign Path**: `deposit(tokenId)` and `withdraw(tokenId, amount)` for isolated per-agent fund management.
+- **Hybrid Support**: The frontend gracefully falls back to Legacy mode if the contract has not yet been upgraded, ensuring zero downtime.
 
 ---
 

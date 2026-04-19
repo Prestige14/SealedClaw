@@ -55,8 +55,11 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     // Policies per tokenId
     mapping(uint256 => Policy) public policies;
 
-    // [FIX 2] Per-user balances
+    // [FIX 2] Per-user balances (legacy: credited via deposit())
     mapping(address => uint256) public balances;
+
+    // Per-tokenId vault balances (credited via deposit(tokenId))
+    mapping(uint256 => uint256) public vaultBalances;
 
     // [FIX 4] Daily spend tracking per tokenId
     mapping(uint256 => uint256) public dailySpent;
@@ -77,6 +80,8 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     );
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
+    event DepositedToVault(uint256 indexed tokenId, address indexed depositor, uint256 amount);
+    event WithdrawnVault(uint256 indexed tokenId, address indexed owner, uint256 amount);
     event TeeKeyRotated(address indexed newKey, uint256 timestamp);
     event EmergencyWithdraw(address indexed owner, uint256 amount);
 
@@ -103,7 +108,7 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     // ── Deposit / Withdraw ────────────────────────────────────────────────────
     /**
      * @notice [FIX 2] Any user can deposit native token into the vault.
-     *         Funds are tracked per-address, not pooled.
+     *         Funds are tracked per-address (legacy path).
      */
     function deposit() external payable whenNotPaused {
         require(msg.value > 0, "Amount must be > 0");
@@ -112,7 +117,18 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice [FIX 2] User withdraws their own funds.
+     * @notice Deposit native token attributed to a specific tokenId.
+     *         Caller must own the tokenId.
+     *         Funds tracked in vaultBalances[tokenId].
+     */
+    function deposit(uint256 tokenId) external payable onlyTokenOwner(tokenId) whenNotPaused {
+        require(msg.value > 0, "Amount must be > 0");
+        vaultBalances[tokenId] += msg.value;
+        emit DepositedToVault(tokenId, msg.sender, msg.value);
+    }
+
+    /**
+     * @notice [FIX 2] User withdraws their own funds (legacy path).
      *         ReentrancyGuard protects against re-entrancy.
      */
     function withdraw(uint256 amount) external nonReentrant {
@@ -121,6 +137,35 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         (bool ok, ) = msg.sender.call{value: amount}("");
         require(ok, "Transfer failed");
         emit Withdrawn(msg.sender, amount);
+    }
+
+    /**
+     * @notice Withdraw funds attributed to a specific tokenId.
+     *
+     *         Access control  : caller must be ownerOf(tokenId).
+     *         Balance check   : vaultBalances[tokenId] >= amount.
+     *         PendingTransfer : withdrawal IS allowed — it is treated as an
+     *                           asset clean-up step before handover.
+     *         Security pattern: CEI (Checks-Effects-Interactions) + nonReentrant.
+     *
+     * @param tokenId  The agent iNFT whose vault funds are being withdrawn.
+     * @param amount   Amount in wei to withdraw.
+     */
+    function withdraw(uint256 tokenId, uint256 amount)
+        external
+        onlyTokenOwner(tokenId)
+        nonReentrant
+    {
+        require(vaultBalances[tokenId] >= amount, "Insufficient vault balance");
+
+        // Effects — update state before external call (CEI)
+        vaultBalances[tokenId] -= amount;
+
+        // Interactions
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok, "Transfer failed");
+
+        emit WithdrawnVault(tokenId, msg.sender, amount);
     }
 
     /**
@@ -298,6 +343,13 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         uint256 today = block.timestamp / 1 days;
         if (lastResetDay[tokenId] < today) return 0;
         return dailySpent[tokenId];
+    }
+
+    /**
+     * @notice Returns the vault balance credited to a specific tokenId.
+     */
+    function getVaultBalance(uint256 tokenId) external view returns (uint256) {
+        return vaultBalances[tokenId];
     }
 
     function keyRotationUnlocksAt() external view returns (uint256) {

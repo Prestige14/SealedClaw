@@ -126,7 +126,7 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         console.log(`  [Step 5] Policy set (allowedDEX=${MOCK_DEX})`);
 
         // ── Step 7: Deposit funds ──────────────────────────────────────────────
-        await vault.connect(user).deposit({ value: ethers.parseEther("0.1") });
+        await vault.connect(user)["deposit()"]({ value: ethers.parseEther("0.1") });
         console.log("  [Step 6] Deposited 0.1 ETH");
 
         // ── Step 8: Run Python AGAIN with the FINAL vault address ──────────────
@@ -213,5 +213,138 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
             )
         ).to.be.revertedWith("Transaction expired");
         console.log("  [PASS] Expired deadline correctly rejected");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Withdrawal Tests — per-tokenId vault balance model
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("PolicyVault: withdraw(tokenId, amount) — Feature Unfreeze", function () {
+    this.timeout(60_000);
+
+    let vault: any;
+    let agentNFT: any;
+    let deployer: any;
+    let owner: any;
+    let stranger: any;
+    const TOKEN_ID = 0n;
+    const DEPOSIT_AMOUNT = ethers.parseEther("1.0");
+
+    before(async function () {
+        [deployer, owner, stranger] = await ethers.getSigners();
+
+        // Deploy fresh contracts for isolation
+        const SealedClawAgent = await ethers.getContractFactory("SealedClawAgent");
+        agentNFT = await SealedClawAgent.deploy(0n);
+        await agentNFT.waitForDeployment();
+
+        const PolicyVault = await ethers.getContractFactory("PolicyVault");
+        vault = await PolicyVault.deploy(
+            await agentNFT.getAddress(),
+            deployer.address   // TEE key placeholder
+        );
+        await vault.waitForDeployment();
+
+        // Mint token for `owner`
+        const mintTx = await agentNFT.connect(owner).mintAgent("ipfs://wd-test");
+        await mintTx.wait();
+
+        console.log("\n  [WD Setup] NFT minted for owner (tokenId=0)");
+    });
+
+    // ── WD-1: deposit(tokenId) credits vaultBalances correctly ───────────────
+    it("WD-1: deposit(tokenId) attributes funds to the correct tokenId", async function () {
+        const before = await vault.getVaultBalance(TOKEN_ID);
+        expect(before).to.equal(0n, "vaultBalance must start at 0");
+
+        const tx = await vault.connect(owner)["deposit(uint256)"](TOKEN_ID, {
+            value: DEPOSIT_AMOUNT,
+        });
+        await tx.wait();
+
+        const after = await vault.getVaultBalance(TOKEN_ID);
+        expect(after).to.equal(DEPOSIT_AMOUNT, "vaultBalance must equal deposited amount");
+        console.log("  [PASS] vaultBalances[tokenId] correctly credited after deposit(tokenId)");
+    });
+
+    // ── WD-2: withdraw(tokenId, amount) succeeds for token owner ─────────────
+    it("WD-2: owner can withdraw a partial amount from their tokenId vault", async function () {
+        const withdrawAmt = ethers.parseEther("0.4");
+        const balanceBefore = await vault.getVaultBalance(TOKEN_ID);
+
+        const ownerEthBefore = await ethers.provider.getBalance(owner.address);
+
+        const tx = await vault.connect(owner)["withdraw(uint256,uint256)"](TOKEN_ID, withdrawAmt);
+        const receipt = await tx.wait();
+        expect(receipt!.status).to.equal(1, "withdraw tx must succeed");
+
+        const balanceAfter = await vault.getVaultBalance(TOKEN_ID);
+        expect(balanceAfter).to.equal(
+            balanceBefore - withdrawAmt,
+            "vaultBalance must decrease by withdrawn amount"
+        );
+
+        // ETH must arrive (accounting for gas)
+        const ownerEthAfter = await ethers.provider.getBalance(owner.address);
+        const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+        const netReceived = ownerEthAfter - ownerEthBefore;
+        expect(netReceived + gasUsed).to.equal(withdrawAmt, "Correct ETH must be received net of gas");
+
+        console.log("  [PASS] Partial withdrawal succeeded, balance and ETH both correct");
+    });
+
+    // ── WD-3: over-withdrawal reverts ─────────────────────────────────────────
+    it("WD-3: over-withdrawal reverts with 'Insufficient vault balance'", async function () {
+        const currentBalance = await vault.getVaultBalance(TOKEN_ID);
+        const overAmount = currentBalance + ethers.parseEther("9999");
+
+        await expect(
+            vault.connect(owner)["withdraw(uint256,uint256)"](TOKEN_ID, overAmount)
+        ).to.be.revertedWith("Insufficient vault balance");
+
+        console.log("  [PASS] Over-withdrawal correctly reverted");
+    });
+
+    // ── WD-4: non-owner withdrawal reverts ────────────────────────────────────
+    it("WD-4: non-owner withdrawal reverts with 'Not token owner'", async function () {
+        const currentBalance = await vault.getVaultBalance(TOKEN_ID);
+        const smallAmt = currentBalance < ethers.parseEther("0.1")
+            ? currentBalance
+            : ethers.parseEther("0.1");
+
+        if (smallAmt === 0n) {
+            console.log("  [SKIP] No balance to test non-owner (run after WD-2)");
+            return;
+        }
+
+        await expect(
+            vault.connect(stranger)["withdraw(uint256,uint256)"](TOKEN_ID, smallAmt)
+        ).to.be.revertedWith("Not token owner");
+
+        console.log("  [PASS] Non-owner withdrawal correctly rejected");
+    });
+
+    // ── WD-5: withdrawal allowed during PendingTransfer ───────────────────────
+    it("WD-5: withdrawal is allowed even when PendingTransfer is active", async function () {
+        // Initiate handover
+        const initTx = await vault.connect(owner).initiateTransfer(TOKEN_ID, stranger.address);
+        await initTx.wait();
+
+        const pending = await vault.pendingTransfers(TOKEN_ID);
+        expect(pending.transferInitiatedAt).to.be.gt(0n, "Pending transfer must be active");
+
+        // Withdrawal should succeed (cleanup path)
+        const balanceNow = await vault.getVaultBalance(TOKEN_ID);
+        if (balanceNow === 0n) {
+            // Re-deposit a bit first if balance was drained
+            await vault.connect(owner)["deposit(uint256)"](TOKEN_ID, { value: ethers.parseEther("0.1") });
+        }
+
+        const wdAmt = ethers.parseEther("0.1");
+        const tx = await vault.connect(owner)["withdraw(uint256,uint256)"](TOKEN_ID, wdAmt);
+        const receipt = await tx.wait();
+        expect(receipt!.status).to.equal(1, "Withdrawal during PendingTransfer must succeed");
+
+        console.log("  [PASS] Withdrawal allowed during active PendingTransfer (asset cleanup path)");
     });
 });
