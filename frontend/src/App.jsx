@@ -112,6 +112,15 @@ export default function App() {
   const [tokenId, setTokenId]               = useState('');
   const [agentDetails, setAgentDetails]     = useState(null);
 
+  // Risk Policy state
+  const [policy, setPolicy] = useState({
+    maxDrawdown: '1000',     // Default 10%
+    riskMaxPercent: '500',   // Default 5%
+    dailyLimit: '1.0',       // Default 1 ETH
+  });
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [updatingPolicy, setUpdatingPolicy] = useState(false);
+
   // Portfolio state (all in BigInt wei)
   const [vaultNativeBalance, setVaultNativeBalance] = useState(0n);
   const [tokenVaultBalance, setTokenVaultBalance]   = useState(0n);
@@ -258,6 +267,35 @@ export default function App() {
       setPortfolioLoading(false);
     }
   }, [account, tokenId, contractCaps]);
+
+  const fetchPolicy = useCallback(async () => {
+    if (!account || !tokenId || !contractCaps.probed) return;
+    setPolicyLoading(true);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const vault    = new ethers.Contract(VAULT_ADDRESS, VAULT_ABI, provider);
+      
+      const p = await vault.getPolicy(tokenId);
+      setPolicy({
+        maxDrawdown: p.maxDrawdown.toString(),
+        riskMaxPercent: p.riskMaxPercent.toString(),
+        dailyLimit: ethers.formatEther(p.dailyLimit),
+      });
+    } catch (err) {
+      console.warn('fetchPolicy failed:', err);
+    } finally {
+      setPolicyLoading(false);
+    }
+  }, [account, tokenId, contractCaps]);
+
+  // Combined update on tokenId change
+  useEffect(() => {
+    if (account && tokenId) {
+      updateAgentStatus();
+      updatePortfolio();
+      fetchPolicy();
+    }
+  }, [account, tokenId, updateAgentStatus, updatePortfolio, fetchPolicy]);
 
   /**
    * fetchOwnedTokens — queries AgentMinted events filtered to the connected
@@ -454,6 +492,32 @@ export default function App() {
     const tx = await contract.initiateTransfer(BigInt(tokenId), newOwner);
     await tx.wait();
     showStatus("Handover active! Agent restricted to Reduce-Only.", "success");
+  });
+
+  const savePolicy = () => handleAction(async () => {
+    if (!tokenId) return;
+    setUpdatingPolicy(true);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer   = await provider.getSigner();
+      const vault    = new ethers.Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+
+      const newPolicy = {
+        maxDrawdown: BigInt(policy.maxDrawdown),
+        riskMaxPercent: BigInt(policy.riskMaxPercent),
+        allowedTokens: [], // Placeholder for future use
+        allowedDEXs: [],   // Placeholder for future use
+        dailyLimit: ethers.parseEther(policy.dailyLimit),
+      };
+
+      showStatus("Updating Risk Policy...", "info");
+      const tx = await vault.updatePolicy(tokenId, newPolicy);
+      await tx.wait();
+      showStatus("Risk Policy updated successfully!", "success");
+      await fetchPolicy();
+    } finally {
+      setUpdatingPolicy(false);
+    }
   });
 
   // ── Pie chart data ────────────────────────────────────────────────────────
@@ -750,6 +814,86 @@ export default function App() {
                 <BarChart3 size={36} />
                 <p className="text-sm font-medium">No funds in vault</p>
                 <p className="text-xs text-gray-700">Deposit funds below to see your allocation chart</p>
+              </div>
+            )}
+          </section>
+
+          {/* ── RISK POLICY CONFIGURATION ── */}
+          <section className="glass-card p-8">
+            <div className="flex items-center gap-3 mb-6 text-orange-400">
+              <Shield size={24} />
+              <h2 className="text-xl font-bold text-white">Risk Policy Configuration</h2>
+            </div>
+
+            {!tokenId ? (
+              <div className="p-8 text-center bg-black/20 rounded-2xl border border-dashed border-gray-800">
+                <p className="text-gray-500">Select an iNFT to manage its trading policy</p>
+              </div>
+            ) : policyLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={32} className="text-orange-400 animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Max Drawdown */}
+                  <div className="space-y-2">
+                    <label className="text-gray-400 text-sm font-medium">Max Drawdown (bps)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={policy.maxDrawdown}
+                        onChange={(e) => setPolicy({ ...policy, maxDrawdown: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
+                        placeholder="1000 = 10%"
+                      />
+                      <span className="absolute right-4 top-3 text-gray-600 text-sm">{(Number(policy.maxDrawdown)/100).toFixed(1)}%</span>
+                    </div>
+                    <p className="text-[10px] text-gray-600">Total allowed loss before the agent stops trading.</p>
+                  </div>
+
+                  {/* Risk Max Percent */}
+                  <div className="space-y-2">
+                    <label className="text-gray-400 text-sm font-medium">Max Risk Per Trade (bps)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={policy.riskMaxPercent}
+                        onChange={(e) => setPolicy({ ...policy, riskMaxPercent: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
+                        placeholder="500 = 5%"
+                      />
+                      <span className="absolute right-4 top-3 text-gray-600 text-sm">{(Number(policy.riskMaxPercent)/100).toFixed(1)}%</span>
+                    </div>
+                    <p className="text-[10px] text-gray-600">Max size of a single trade relative to vault balance.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-gray-400 text-sm font-medium">Daily Spend Limit (A0GI)</label>
+                  <div className="relative">
+                    <CreditCard size={18} className="absolute left-4 top-3.5 text-gray-500" />
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={policy.dailyLimit}
+                      onChange={(e) => setPolicy({ ...policy, dailyLimit: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-600">Max total ETH spent by this agent in a 24-hour window.</p>
+                </div>
+
+                <button
+                  onClick={savePolicy}
+                  disabled={loading || updatingPolicy || !tokenId}
+                  className="w-full py-4 rounded-xl bg-orange-600/20 border border-orange-500/40 text-orange-400 font-bold 
+                    hover:bg-orange-600/30 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-2 shadow-lg shadow-orange-500/10"
+                >
+                  {updatingPolicy ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
+                  Update Agent Policy
+                </button>
               </div>
             )}
           </section>

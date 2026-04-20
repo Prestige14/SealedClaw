@@ -70,9 +70,18 @@ def _hr() -> None:
 # Main simulation
 # ---------------------------------------------------------------------------
 
-def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | None = None) -> dict:
+def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | None = None, intent: str = "") -> dict:
     """
     Execute one full SealedClaw TEE worker cycle.
+
+    Parameters
+    ----------
+    is_pending_transfer : bool
+        True if token is in handover protocol.
+    new_owner : str or None
+        New owner address if in handover.
+    intent : str
+        User's conversational intent (NLP string).
 
     Returns
     -------
@@ -196,6 +205,7 @@ def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | Non
         previous_memory=previous_memory,
         token_id=token_id,
         is_pending_transfer=is_pending_transfer,
+        intent=intent,
     )
 
     print(
@@ -310,6 +320,7 @@ if __name__ == "__main__":
     parser.add_argument("--nonce", type=int, default=None, help="Current on-chain nonce (overrides CURRENT_NONCE env)")
     parser.add_argument("--pending-transfer", action="store_true", help="Flag indicating token is in handover window")
     parser.add_argument("--new-owner", type=str, default=None, help="Ethereum address of the new owner during handover")
+    parser.add_argument("--intent", type=str, default="", help="User intent string from OpenClaw Agent")
     args = parser.parse_args()
 
     # Apply CLI overrides to environment so run_tee_worker_cycle() picks them up
@@ -323,7 +334,8 @@ if __name__ == "__main__":
     try:
         result = run_tee_worker_cycle(
             is_pending_transfer=args.pending_transfer,
-            new_owner=args.new_owner
+            new_owner=args.new_owner,
+            intent=args.intent
         )
         
         # LOGIKA BARU: Jika flag --output digunakan, simpan payload ke file JSON

@@ -105,18 +105,34 @@ class OpenClawAgent:
             message = response.choices[0].message
             
             if message.tool_calls:
+                # Add the assistant's tool call message to the history
+                messages.append(message)
+                
                 for tool_call in message.tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
                     
                     if function_name in self.skills:
                         skill_result = self.skills[function_name].execute(**function_args)
-                        print(f"\n[OpenClaw] Agent Execution Complete.")
-                        return skill_result
-                    else:
-                        print(f"[-] Agent requested unknown skill: {function_name}")
+                        
+                        # Feed the tool result back into the prompt for a final conversational answer
+                        messages.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": function_name,
+                            "content": str(skill_result),
+                        })
+                
+                # Get a final summary response from the agent
+                final_response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                )
+                print(f"\n[OpenClaw] Agent Final Answer Generated.")
+                return final_response.choices[0].message.content
             else:
                 print(f"[OpenClaw] Agent Answer: {message.content}")
+                return message.content
 
         except Exception as e:
             print(f"[-] Agent NLP Error: {e}. Forcing fallback execution...")
@@ -162,7 +178,7 @@ def execute_sealed_trade(intent: str):
     if balance_wei == 0:
         print("[-] Warning: Relayer has 0 ETH! Transaction will likely fail due to insufficient funds.")
 
-    print(f"\n[1] Fetching Dynamic Nonce and Pending Transfer for Token ID {token_id_env} from PolicyVault...")
+    print(f"\n[1] Fetching Policy, Nonce, and Pending Transfer for Token ID {token_id_env} from PolicyVault...")
     policy_vault_address_checksum = web3.to_checksum_address(policy_vault_address)
     abi_nonce = [
         {"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "nonces", "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}
@@ -170,10 +186,36 @@ def execute_sealed_trade(intent: str):
     abi_pending = [
         {"inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}], "name": "pendingTransfers", "outputs": [{"internalType": "address", "name": "newOwner", "type": "address"}, {"internalType": "uint256", "name": "transferInitiatedAt", "type": "uint256"}], "stateMutability": "view", "type": "function"}
     ]
+    abi_policy = [
+        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}], "name": "getPolicy", "outputs": [{"components": [{"internalType": "uint256", "name": "maxDrawdown", "type": "uint256"}, {"internalType": "uint256", "name": "riskMaxPercent", "type": "uint256"}, {"internalType": "address[]", "name": "allowedTokens", "type": "address[]"}, {"internalType": "address[]", "name": "allowedDEXs", "type": "address[]"}, {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"}], "internalType": "struct PolicyVault.Policy", "name": "", "type": "tuple"}], "stateMutability": "view", "type": "function"},
+        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}, {"components": [{"internalType": "uint256", "name": "maxDrawdown", "type": "uint256"}, {"internalType": "uint256", "name": "riskMaxPercent", "type": "uint256"}, {"internalType": "address[]", "name": "allowedTokens", "type": "address[]"}, {"internalType": "address[]", "name": "allowedDEXs", "type": "address[]"}, {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"}], "internalType": "struct PolicyVault.Policy", "name": "newPolicy", "type": "tuple"}], "name": "updatePolicy", "outputs": [], "stateMutability": "nonpayable", "type": "function"}
+    ]
+    
     contract_nonce = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_nonce)
     contract_pending = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_pending)
+    contract_policy = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_policy)
     
     try:
+        # Check Policy first
+        policy = call_with_retry(lambda: contract_policy.functions.getPolicy(token_id_env).call())
+        if policy[4] == 0:  # dailyLimit == 0
+            print("[!] Policy not set for this Token ID. Attempting autonomous default configuration...")
+            default_policy = (
+                1000,                      # 10% max drawdown
+                500,                       # 5% max risk per trade
+                [],                        # all tokens allowed
+                [],                        # all DEXs allowed
+                web3.to_wei(1, 'ether')    # 1 ETH daily limit
+            )
+            tx_policy = contract_policy.functions.updatePolicy(token_id_env, default_policy).build_transaction({
+                "from": relayer_account.address,
+                "nonce": web3.eth.get_transaction_count(relayer_account.address),
+            })
+            signed_policy_tx = web3.eth.account.sign_transaction(tx_policy, relayer_pk)
+            tx_hash = web3.eth.send_raw_transaction(signed_policy_tx.raw_transaction)
+            print(f"[+] Autonomous Policy set! Tx: {web3.to_hex(tx_hash)}")
+            web3.eth.wait_for_transaction_receipt(tx_hash)
+
         current_nonce = call_with_retry(lambda: contract_nonce.functions.nonces(token_id_env).call())
         print(f"[+] Current On-Chain Nonce: {current_nonce}")
         
@@ -196,8 +238,8 @@ def execute_sealed_trade(intent: str):
     
     print("[2] Triggering TEE Worker...")
     try:
-        # Pass dynamic nonce to tee-worker
-        cmd = ["python", "tee-worker/main.py", "--output", output_filename, "--nonce", str(current_nonce)]
+        # Pass dynamic nonce and user intent to tee-worker
+        cmd = ["python", "tee-worker/main.py", "--output", output_filename, "--nonce", str(current_nonce), "--intent", intent]
         if is_pending_transfer:
             cmd.extend(["--pending-transfer", "--new-owner", str(new_owner)])
             

@@ -53,6 +53,7 @@ def make_trading_decision(
     previous_memory: dict[str, Any] | None,
     token_id: int,
     is_pending_transfer: bool = False,
+    intent: str = "",
 ) -> dict[str, Any]:
     """
     Produce a signed-ready trading decision based on current price and memory.
@@ -150,15 +151,18 @@ def make_trading_decision(
     # Case 2: Bullish signal — BUY
     # -----------------------------------------------------------------------
     if price_change_pct > _BUY_THRESHOLD_PCT:
-        buy_amount_wei: int = int(balance_wei * _BUY_SIZE_PCT)
+        rationale = (
+            f"Price rose {price_change_pct:.2f}% (> {_BUY_THRESHOLD_PCT}% threshold). "
+            f"BUY {_BUY_SIZE_PCT*100:.0f}% of portfolio = {buy_amount_wei} wei."
+        )
+        if intent:
+            rationale = f"[User Intent: {intent}] {rationale}"
+
         return {
             "action": ACTION_BUY,
             "amount_wei": buy_amount_wei,
             "asset": asset,
-            "rationale": (
-                f"Price rose {price_change_pct:.2f}% (> {_BUY_THRESHOLD_PCT}% threshold). "
-                f"BUY {_BUY_SIZE_PCT*100:.0f}% of portfolio = {buy_amount_wei} wei."
-            ),
+            "rationale": rationale,
             "current_price": median_price,
             "price_change_pct": round(price_change_pct, 4),
             "token_id": token_id,
@@ -168,14 +172,18 @@ def make_trading_decision(
     # Case 3: Bearish signal — REDUCE_ONLY
     # -----------------------------------------------------------------------
     if price_change_pct < -_REDUCE_THRESHOLD_PCT:
+        rationale = (
+            f"Price dropped {abs(price_change_pct):.2f}% (> {_REDUCE_THRESHOLD_PCT}% threshold). "
+            "REDUCE_ONLY to limit downside risk."
+        )
+        if intent:
+            rationale = f"[User Intent: {intent}] {rationale}"
+
         return {
             "action": ACTION_REDUCE_ONLY,
             "amount_wei": 0,  # REDUCE_ONLY closes existing positions, no new capital
             "asset": asset,
-            "rationale": (
-                f"Price dropped {abs(price_change_pct):.2f}% (> {_REDUCE_THRESHOLD_PCT}% threshold). "
-                "REDUCE_ONLY to limit downside risk."
-            ),
+            "rationale": rationale,
             "current_price": median_price,
             "price_change_pct": round(price_change_pct, 4),
             "token_id": token_id,
