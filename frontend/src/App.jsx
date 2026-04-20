@@ -46,6 +46,7 @@ const VAULT_ABI = [
   "function initiateTransfer(uint256 tokenId, address newOwner) external",
   "function pendingTransfers(uint256 tokenId) external view returns (address newOwner, uint256 transferInitiatedAt)",
   "function getPolicy(uint256 tokenId) external view returns (tuple(uint256 maxDrawdown, uint256 riskMaxPercent, address[] allowedTokens, address[] allowedDEXs, uint256 dailyLimit))",
+  "function updatePolicy(uint256 tokenId, tuple(uint256 maxDrawdown, uint256 riskMaxPercent, address[] allowedTokens, address[] allowedDEXs, uint256 dailyLimit) newPolicy) external",
   "event TransferInitiated(uint256 indexed tokenId, address newOwner, uint256 timestamp)",
   "event WithdrawnVault(uint256 indexed tokenId, address indexed owner, uint256 amount)",
   "event DepositedToVault(uint256 indexed tokenId, address indexed depositor, uint256 amount)"
@@ -820,80 +821,114 @@ export default function App() {
 
           {/* ── RISK POLICY CONFIGURATION ── */}
           <section className="glass-card p-8">
-            <div className="flex items-center gap-3 mb-6 text-orange-400">
-              <Shield size={24} />
-              <h2 className="text-xl font-bold text-white">Risk Policy Configuration</h2>
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3 text-orange-400">
+                <div className="p-2 bg-orange-500/20 rounded-lg">
+                  <Shield size={20} />
+                </div>
+                <h2 className="text-xl font-bold text-white">Risk Policy Configuration</h2>
+              </div>
+              <div className="px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded-lg text-[10px] text-orange-300 font-bold tracking-widest uppercase">
+                Dynamic Enforcement
+              </div>
             </div>
 
             {!tokenId ? (
-              <div className="p-8 text-center bg-black/20 rounded-2xl border border-dashed border-gray-800">
-                <p className="text-gray-500">Select an iNFT to manage its trading policy</p>
+              <div className="p-12 text-center bg-black/40 rounded-3xl border border-dashed border-white/5">
+                <div className="text-gray-600 mb-2 flex justify-center"><AlertTriangle size={32} /></div>
+                <p className="text-gray-500 font-medium">Select an active iNFT from the sidebar to manage limits</p>
               </div>
             ) : policyLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 size={32} className="text-orange-400 animate-spin" />
+              <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <Loader2 size={40} className="text-orange-400 animate-spin" />
+                <p className="text-gray-500 text-sm animate-pulse">Syncing on-chain policy...</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Max Drawdown */}
-                  <div className="space-y-2">
-                    <label className="text-gray-400 text-sm font-medium">Max Drawdown (bps)</label>
+                  <div className="group space-y-3">
+                    <div className="flex justify-between items-center px-1">
+                      <label className="text-gray-400 text-xs font-bold uppercase tracking-wider">Max Drawdown</label>
+                      <span className="text-orange-400 font-mono text-sm">{(Number(policy.maxDrawdown)/100).toFixed(1)}%</span>
+                    </div>
                     <div className="relative">
                       <input
                         type="number"
                         value={policy.maxDrawdown}
                         onChange={(e) => setPolicy({ ...policy, maxDrawdown: e.target.value })}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
-                        placeholder="1000 = 10%"
+                        className="w-full bg-black/60 border border-white/5 rounded-2xl px-5 py-4 text-white focus:border-orange-500/50 
+                          focus:ring-4 focus:ring-orange-500/5 transition-all font-mono outline-none appearance-none"
+                        placeholder="1000"
                       />
-                      <span className="absolute right-4 top-3 text-gray-600 text-sm">{(Number(policy.maxDrawdown)/100).toFixed(1)}%</span>
+                      <div className="absolute right-5 top-4 text-gray-700 text-xs font-bold">BPS</div>
                     </div>
-                    <p className="text-[10px] text-gray-600">Total allowed loss before the agent stops trading.</p>
+                    <p className="px-1 text-[10px] text-gray-500 leading-relaxed">
+                      Cumulative loss threshold. If breached, the Agent enters standby mode.
+                    </p>
                   </div>
 
                   {/* Risk Max Percent */}
-                  <div className="space-y-2">
-                    <label className="text-gray-400 text-sm font-medium">Max Risk Per Trade (bps)</label>
+                  <div className="group space-y-3">
+                    <div className="flex justify-between items-center px-1">
+                      <label className="text-gray-400 text-xs font-bold uppercase tracking-wider">Max Risk Per Trade</label>
+                      <span className="text-orange-400 font-mono text-sm">{(Number(policy.riskMaxPercent)/100).toFixed(1)}%</span>
+                    </div>
                     <div className="relative">
                       <input
                         type="number"
                         value={policy.riskMaxPercent}
                         onChange={(e) => setPolicy({ ...policy, riskMaxPercent: e.target.value })}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
-                        placeholder="500 = 5%"
+                        className="w-full bg-black/60 border border-white/5 rounded-2xl px-5 py-4 text-white focus:border-orange-500/50 
+                          focus:ring-4 focus:ring-orange-500/5 transition-all font-mono outline-none appearance-none"
+                        placeholder="500"
                       />
-                      <span className="absolute right-4 top-3 text-gray-600 text-sm">{(Number(policy.riskMaxPercent)/100).toFixed(1)}%</span>
+                      <div className="absolute right-5 top-4 text-gray-700 text-xs font-bold">BPS</div>
                     </div>
-                    <p className="text-[10px] text-gray-600">Max size of a single trade relative to vault balance.</p>
+                    <p className="px-1 text-[10px] text-gray-500 leading-relaxed">
+                      Max position size relative to the current vault balance.
+                    </p>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-gray-400 text-sm font-medium">Daily Spend Limit (A0GI)</label>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-gray-400 text-xs font-bold uppercase tracking-wider">Daily Spending Cap</label>
+                    <span className="text-orange-400 font-mono text-sm">{policy.dailyLimit} A0GI</span>
+                  </div>
                   <div className="relative">
-                    <CreditCard size={18} className="absolute left-4 top-3.5 text-gray-500" />
+                    <div className="absolute left-5 top-4 text-orange-500/50"><CreditCard size={18} /></div>
                     <input
                       type="number"
                       step="0.1"
                       value={policy.dailyLimit}
                       onChange={(e) => setPolicy({ ...policy, dailyLimit: e.target.value })}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-white focus:border-orange-500/50 transition-all font-mono"
+                      className="w-full bg-black/60 border border-white/5 rounded-2xl pl-14 pr-16 py-4 text-white focus:border-orange-500/50 
+                        focus:ring-4 focus:ring-orange-500/5 transition-all font-mono outline-none"
                     />
+                    <div className="absolute right-5 top-4 text-gray-700 text-xs font-bold">A0GI / DAY</div>
                   </div>
-                  <p className="text-[10px] text-gray-600">Max total ETH spent by this agent in a 24-hour window.</p>
+                  <p className="px-1 text-[10px] text-gray-500">
+                    Hard cap for total outflow within a rolling 24-hour window.
+                  </p>
                 </div>
 
-                <button
-                  onClick={savePolicy}
-                  disabled={loading || updatingPolicy || !tokenId}
-                  className="w-full py-4 rounded-xl bg-orange-600/20 border border-orange-500/40 text-orange-400 font-bold 
-                    hover:bg-orange-600/30 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed
-                    flex items-center justify-center gap-2 shadow-lg shadow-orange-500/10"
-                >
-                  {updatingPolicy ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
-                  Update Agent Policy
-                </button>
+                <div className="pt-4">
+                  <button
+                    onClick={savePolicy}
+                    disabled={loading || updatingPolicy || !tokenId}
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-orange-600/20 to-amber-600/20 border border-orange-500/30 
+                      text-orange-400 font-black uppercase tracking-widest text-sm hover:from-orange-600/30 hover:to-amber-600/30 
+                      active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                      flex items-center justify-center gap-3 shadow-xl shadow-orange-900/10"
+                  >
+                    {updatingPolicy ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+                    Apply New Policy
+                  </button>
+                  <p className="text-center mt-4 text-[9px] text-gray-700 uppercase tracking-tighter">
+                    Requires on-chain signature • Gas fees apply
+                  </p>
+                </div>
               </div>
             )}
           </section>
