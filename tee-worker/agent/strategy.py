@@ -1,28 +1,17 @@
 """
-agent/strategy.py — Autonomous Trading Strategy Logic
+agent/strategy.py — Autonomous Trading Strategy Logic (v2)
 
-Implements the SealedClaw agent's decision-making engine. Reads sealed memory
-from previous execution cycles to determine trend direction and decides whether
-to BUY, REDUCE_ONLY, or HOLD based on simple price-threshold rules.
+Now supports Dynamic Strategy Classes — thresholds are determined at runtime
+from the STRATEGY_CLASS_ID environment variable (set by orchestrator from
+StrategyVault.getResolvedParams()). Falls back to BALANCED_MERC if not set.
 
-The strategy is intentionally simple to keep the focus on TEE infrastructure.
-In production this would be replaced by a more sophisticated ML-based strategy
-running as a sealed inference model inside the 0G Compute enclave.
-
-# TEE BOUNDARY: All decision logic runs inside the enclave. The resulting
-# decision dict is signed before leaving the secure boundary.
-# 
-# 0G COMPUTE / ML INTEGRATION:
-# The current strategy based on static thresholds is a placeholder. To integrate a real
-# ML model (e.g. Scikit-learn, PyTorch, or ONNX format), follow these steps:
-# 1. Package the ML model alongside the TEE enclave or fetch it via 0G Storage.
-# 2. Add dependencies like `numpy` or `onnxruntime` to `requirements.txt`.
-# 3. Replace the `make_trading_decision` logic below with model inference.
-# 4. Use `previous_memory` to provide context (e.g., historical price windows).
-# 5. Ensure inference runs entirely *within* the TEE (enclave memory).
+# TEE BOUNDARY: All decision logic runs inside the enclave.
 """
-
+import os
 from typing import Any
+
+from agent.strategy_classes import resolve_strategy, StrategyParams
+from agent.llm import generate_ai_rationale, analyze_intent_override
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -31,21 +20,32 @@ from typing import Any
 # Simulated portfolio: 1 ETH worth of balance expressed in wei
 _SIMULATED_BALANCE_WEI: int = 1_000_000_000_000_000_000  # 1 ETH in wei
 
-# Price movement thresholds
-_BUY_THRESHOLD_PCT: float = 2.0     # Buy if price rose more than 2%
-_REDUCE_THRESHOLD_PCT: float = 3.0  # Reduce if price dropped more than 3%
-
-# BUY size: 5% of the simulated portfolio balance
-_BUY_SIZE_PCT: float = 0.05
-
-
-# ---------------------------------------------------------------------------
 # Decision types (explicit strings matching PolicyVault ABI expectations)
-# ---------------------------------------------------------------------------
-
 ACTION_BUY: str = "BUY"
 ACTION_HOLD: str = "HOLD"
 ACTION_REDUCE_ONLY: str = "REDUCE_ONLY"
+
+
+def _load_strategy_params() -> StrategyParams:
+    """
+    Load strategy parameters from environment at decision time.
+    The orchestrator is responsible for setting:
+      STRATEGY_CLASS_ID     — int (0-4)
+      STRATEGY_BUY_BPS      — optional, for CUSTOM class
+      STRATEGY_REDUCE_BPS   — optional, for CUSTOM class
+      STRATEGY_SIZE_BPS     — optional, for CUSTOM class
+    """
+    class_id = int(os.getenv("STRATEGY_CLASS_ID", "2"))  # Default: BALANCED_MERC
+
+    custom_params = None
+    if class_id == 4:  # CUSTOM
+        custom_params = {
+            "buy_threshold_bps": int(os.getenv("STRATEGY_BUY_BPS", "200")),
+            "reduce_threshold_bps": int(os.getenv("STRATEGY_REDUCE_BPS", "300")),
+            "buy_size_bps": int(os.getenv("STRATEGY_SIZE_BPS", "500")),
+        }
+
+    return resolve_strategy(class_id, custom_params)
 
 
 def make_trading_decision(
@@ -57,152 +57,140 @@ def make_trading_decision(
 ) -> dict[str, Any]:
     """
     Produce a signed-ready trading decision based on current price and memory.
-
-    Implements a three-state threshold strategy:
-
-    1. **No memory (first run)** → return HOLD. The agent has no baseline price
-       to compare against, so it is conservative on the first execution cycle.
-    2. **Price rose > 2% from last recorded price** → BUY 5% of portfolio.
-    3. **Price dropped > 3% from last recorded price** → REDUCE_ONLY (close risk).
-    4. **Otherwise** → HOLD.
+    Thresholds are sourced from the agent's chosen Strategy Class.
 
     Parameters
     ----------
     median_price : float
-        Current manipulation-resistant median price from ``oracle.aggregator``.
-    previous_memory : dict[str, Any] or None
-        Decrypted memory dict from the previous cycle, containing at minimum:
-        - ``"last_price"`` (float): Price at the end of the previous cycle.
-        - ``"balance_wei"`` (int): Simulated portfolio balance in wei.
-        Pass ``None`` if this is the first ever execution cycle.
+        Current manipulation-resistant median price from oracle.aggregator.
+    previous_memory : dict or None
+        Decrypted memory from previous cycle. Key: last_price, balance_wei.
     token_id : int
-        The ERC-7857 token ID of this agent (for informational purposes).
-
-    Returns
-    -------
-    dict[str, Any]
-        Decision dict with keys:
-        - ``action`` (str): One of ``"BUY"``, ``"REDUCE_ONLY"``, ``"HOLD"``.
-        - ``amount_wei`` (int): Position size in wei (0 for HOLD).
-        - ``asset`` (str): Ticker of the traded asset.
-        - ``rationale`` (str): Human-readable explanation of the decision.
-        - ``current_price`` (float): The median price used for this decision.
-        - ``price_change_pct`` (float | None): Percentage change vs last cycle.
-        - ``token_id`` (int): Echo of the input token ID.
-
-    Notes
-    -----
-    # TEE BOUNDARY: Decision is computed inside the enclave. The resulting
-    # dict is signed by the TEE ECDSA key before being forwarded to PolicyVault.
-    # 0G INTEGRATION: In production, replace simple threshold logic with
-    #   a sealed ML inference call via 0G Compute Inference API.
+        ERC-7857 token ID.
+    is_pending_transfer : bool
+        If True, force REDUCE_ONLY (handover protection).
+    intent : str
+        Natural language string from user's Telegram message.
     """
+    params = _load_strategy_params()
     asset: str = "ETH"
 
+    # Extract state from memory if available
+    last_price: float = 0.0
+    balance_wei: int = _SIMULATED_BALANCE_WEI
+    if previous_memory:
+        last_price = float(previous_memory.get("last_price", 0))
+        balance_wei = int(previous_memory.get("balance_wei", _SIMULATED_BALANCE_WEI))
+
+    buy_amount_wei: int = int(balance_wei * params.buy_size_pct)
+
     # -----------------------------------------------------------------------
-    # Case 0: Handover pending — force REDUCE_ONLY mode
+    # Initial Baseline / Safe Halts
     # -----------------------------------------------------------------------
+    price_change_pct = 0.0
+    action = ACTION_HOLD
+    tech_rationale = "Technical assessment."
+
     if is_pending_transfer:
-        return {
-            "action": ACTION_REDUCE_ONLY,
-            "amount_wei": 0,
-            "asset": asset,
-            "rationale": "Transfer pending. REDUCE_ONLY to secure portfolio for handover.",
-            "current_price": median_price,
-            "price_change_pct": None,
-            "token_id": token_id,
-        }
+        action = ACTION_REDUCE_ONLY
+        tech_rationale = "Handover protocol active. Forcing REDUCE_ONLY."
+    elif previous_memory is None:
+        action = ACTION_HOLD
+        tech_rationale = "First execution cycle. Baseline not established."
+    elif last_price == 0:
+        action = ACTION_HOLD
+        tech_rationale = "Invalid historical price detected."
+    else:
+        # -----------------------------------------------------------------------
+        # Standard Decision Logic (Technical Signal)
+        # -----------------------------------------------------------------------
+        price_change_pct = ((median_price - last_price) / last_price) * 100.0
+        
+        if price_change_pct > params.buy_threshold_pct:
+            action = ACTION_BUY
+            tech_rationale = f"Price +{price_change_pct:.2f}% exceeds {params.buy_threshold_pct}% threshold."
+        elif price_change_pct < -params.reduce_threshold_pct:
+            action = ACTION_REDUCE_ONLY
+            tech_rationale = f"Price {price_change_pct:.2f}% below -{params.reduce_threshold_pct}% threshold."
+        else:
+            tech_rationale = f"Price change {price_change_pct:+.2f}% within neutral band."
 
     # -----------------------------------------------------------------------
-    # Case 1: First execution — no historical baseline available
+    # AI Nudge: Intent-Aware Decision Adjustment
     # -----------------------------------------------------------------------
-    if previous_memory is None:
-        return {
-            "action": ACTION_HOLD,
-            "amount_wei": 0,
-            "asset": asset,
-            "rationale": (
-                "First execution cycle — no historical price baseline available. "
-                "HOLD to establish reference point."
-            ),
-            "current_price": median_price,
-            "price_change_pct": None,
-            "token_id": token_id,
-        }
+    # If the user says "Buy now", and we are at least near the boundary, AI allows it.
+    if not is_pending_transfer:
+        action = analyze_intent_override(intent, action, price_change_pct, params.buy_threshold_pct)
 
-    last_price: float = float(previous_memory.get("last_price", median_price))
-    balance_wei: int = int(previous_memory.get("balance_wei", _SIMULATED_BALANCE_WEI))
-
-    # Guard against division-by-zero if last_price is somehow zero
-    if last_price == 0:
-        return {
-            "action": ACTION_HOLD,
-            "amount_wei": 0,
-            "asset": asset,
-            "rationale": "Invalid historical price (zero). HOLD for safety.",
-            "current_price": median_price,
-            "price_change_pct": None,
-            "token_id": token_id,
-        }
-
-    price_change_pct: float = ((median_price - last_price) / last_price) * 100.0
+    # Re-calculate amount if action changed
+    final_amount_wei = buy_amount_wei if action == ACTION_BUY else 0
 
     # -----------------------------------------------------------------------
-    # Case 2: Bullish signal — BUY
+    # AI Rationale: Human-like explanation
     # -----------------------------------------------------------------------
-    if price_change_pct > _BUY_THRESHOLD_PCT:
-        rationale = (
-            f"Price rose {price_change_pct:.2f}% (> {_BUY_THRESHOLD_PCT}% threshold). "
-            f"BUY {_BUY_SIZE_PCT*100:.0f}% of portfolio = {buy_amount_wei} wei."
-        )
-        if intent:
-            rationale = f"[User Intent: {intent}] {rationale}"
+    ai_rationale = generate_ai_rationale(
+        technical_decision=action,
+        price=median_price,
+        price_change_pct=price_change_pct if previous_memory else None,
+        strategy_name=params.class_name,
+        user_intent=intent
+    )
 
-        return {
-            "action": ACTION_BUY,
-            "amount_wei": buy_amount_wei,
-            "asset": asset,
-            "rationale": rationale,
-            "current_price": median_price,
-            "price_change_pct": round(price_change_pct, 4),
-            "token_id": token_id,
-        }
-
-    # -----------------------------------------------------------------------
-    # Case 3: Bearish signal — REDUCE_ONLY
-    # -----------------------------------------------------------------------
-    if price_change_pct < -_REDUCE_THRESHOLD_PCT:
-        rationale = (
-            f"Price dropped {abs(price_change_pct):.2f}% (> {_REDUCE_THRESHOLD_PCT}% threshold). "
-            "REDUCE_ONLY to limit downside risk."
-        )
-        if intent:
-            rationale = f"[User Intent: {intent}] {rationale}"
-
-        return {
-            "action": ACTION_REDUCE_ONLY,
-            "amount_wei": 0,  # REDUCE_ONLY closes existing positions, no new capital
-            "asset": asset,
-            "rationale": rationale,
-            "current_price": median_price,
-            "price_change_pct": round(price_change_pct, 4),
-            "token_id": token_id,
-        }
-
-    # -----------------------------------------------------------------------
-    # Case 4: No clear signal — HOLD
-    # -----------------------------------------------------------------------
     return {
-        "action": ACTION_HOLD,
-        "amount_wei": 0,
+        "action": action,
+        "amount_wei": final_amount_wei,
         "asset": asset,
-        "rationale": (
-            f"Price change {price_change_pct:+.2f}% is within neutral band "
-            f"[-{_REDUCE_THRESHOLD_PCT}%, +{_BUY_THRESHOLD_PCT}%]. HOLD position."
-        ),
+        "rationale": ai_rationale,
         "current_price": median_price,
         "price_change_pct": round(price_change_pct, 4),
         "token_id": token_id,
+        "strategy_class": params.class_name,
+        "technical_summary": tech_rationale
+    }
+
+    # -----------------------------------------------------------------------
+    # Decision Logic (Technical Signal)
+    # -----------------------------------------------------------------------
+    action = ACTION_HOLD
+    tech_rationale = "Neutral market conditions."
+
+    if price_change_pct > params.buy_threshold_pct:
+        action = ACTION_BUY
+        tech_rationale = f"Price cross above {params.buy_threshold_pct}% buy threshold."
+    elif price_change_pct < -params.reduce_threshold_pct:
+        action = ACTION_REDUCE_ONLY
+        tech_rationale = f"Price cross below -{params.reduce_threshold_pct}% reduce threshold."
+
+    # -----------------------------------------------------------------------
+    # AI Nudge: Intent-Aware Decision Adjustment
+    # -----------------------------------------------------------------------
+    # If the user says "Buy now", and we are at least half-way to target, AI allows it.
+    action = analyze_intent_override(intent, action, price_change_pct, params.buy_threshold_pct)
+
+    # Re-calculate amount if action changed
+    final_amount_wei = buy_amount_wei if action == ACTION_BUY else 0
+
+    # -----------------------------------------------------------------------
+    # AI Rationale: Human-like explanation
+    # -----------------------------------------------------------------------
+    ai_rationale = generate_ai_rationale(
+        technical_decision=action,
+        price=median_price,
+        price_change_pct=price_change_pct,
+        strategy_name=params.class_name,
+        user_intent=intent
+    )
+
+    return {
+        "action": action,
+        "amount_wei": final_amount_wei,
+        "asset": asset,
+        "rationale": ai_rationale,
+        "current_price": median_price,
+        "price_change_pct": round(price_change_pct, 4),
+        "token_id": token_id,
+        "strategy_class": params.class_name,
+        "technical_summary": tech_rationale
     }
 
 
@@ -214,27 +202,6 @@ def build_updated_memory(
 ) -> dict[str, Any]:
     """
     Construct the updated memory dict to be sealed and stored after a cycle.
-
-    Parameters
-    ----------
-    previous_memory : dict[str, Any] or None
-        Memory from the previous cycle (None for first run).
-    decision : dict[str, Any]
-        Decision dict returned by ``make_trading_decision``.
-    median_price : float
-        The oracle median price used in this cycle.
-    cycle_number : int, optional
-        Monotonically increasing cycle counter for auditability.
-
-    Returns
-    -------
-    dict[str, Any]
-        Updated memory dict to encrypt and upload to 0G Storage.
-
-    Notes
-    -----
-    # 0G INTEGRATION: This dict is passed to enclave.crypto.encrypt_memory()
-    #   and the resulting blob is uploaded to 0G Storage KV store.
     """
     base_balance: int = (
         previous_memory.get("balance_wei", _SIMULATED_BALANCE_WEI)
@@ -249,4 +216,5 @@ def build_updated_memory(
         "balance_wei": base_balance,
         "cycle": cycle_number,
         "price_change_pct": decision.get("price_change_pct"),
+        "strategy_class": decision.get("strategy_class", "BALANCED_MERC"),
     }

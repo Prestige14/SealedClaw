@@ -56,9 +56,15 @@ _BASE_PRICE_USD: dict[str, float] = {
 }
 
 
+_LATEST_PRICES: dict[str, float] = _BASE_PRICE_USD.copy()
+
 def _base_price(asset: str) -> float:
-    """Return the base simulated price for an asset."""
-    return _BASE_PRICE_USD.get(asset.upper(), 100.0)
+    """Return the base simulated price for an asset, anchored to latest known good data."""
+    return _LATEST_PRICES.get(asset.upper(), 100.0)
+
+def _update_base_price(asset: str, price: float):
+    """Update the baseline for simulated/fallback sources."""
+    _LATEST_PRICES[asset.upper()] = price
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +100,7 @@ def fetch_pyth_price(asset: str) -> float:
         expo = price_info["expo"]
         
         actual_price = float(price_str) * (10 ** expo)
+        _update_base_price(asset, actual_price)  # Anchor fallbacks to this live price
         return round(actual_price, 4)
     except Exception as e:
         print(f"[ORACLE] Pyth fetch failed: {e}. Using fallback.")

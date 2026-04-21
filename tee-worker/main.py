@@ -28,6 +28,14 @@ import argparse
 import json
 import os
 import sys
+
+# Ensure UTF-8 output on Windows terminal/pipes to avoid 'charmap' encoding errors
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Older python versions may not have reconfigure
+        pass
 import traceback
 
 from dotenv import load_dotenv

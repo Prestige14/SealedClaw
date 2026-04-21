@@ -235,9 +235,11 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         // ── 1. Deadline check ────────────────────────────────────────────────
         require(block.timestamp <= deadline, "Transaction expired");
 
+        // Decode strategy data once for all checks
+        (string memory action, uint256 amountInStrategy, string memory assetInStrategy) = abi.decode(strategyData, (string, uint256, string));
+
         // ── 1.5. Enforce Reduce-Only Mode during PendingTransfer ─────────────
         if (pendingTransfers[tokenId].transferInitiatedAt > 0) {
-            (string memory action, , ) = abi.decode(strategyData, (string, uint256, string));
             require(keccak256(bytes(action)) == keccak256(bytes("REDUCE_ONLY")), "Must be REDUCE_ONLY during transfer");
         }
 
@@ -289,7 +291,33 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         nonces[tokenId]      = currentNonce + 1;
         dailySpent[tokenId] += tradeAmount;
 
-        // ── 8. Emit (actual DEX call would go here in production) ─────────────
+        // ── 8. [FIX 6] ACTUAL EXECUTION (DEX External Call) ──────────────────
+        // Strategy data was decoded at the top of the function.
+        // We pass the native token (0G) to the DEX if the action is BUY.
+        
+        uint256 balanceBefore = address(this).balance;
+        uint256 valueToSend = 0;
+        if (keccak256(bytes(action)) == keccak256(bytes("BUY"))) {
+            valueToSend = tradeAmount;
+            require(vaultBalances[tokenId] >= valueToSend, "Insufficient vault balance for trade");
+            vaultBalances[tokenId] -= valueToSend;
+        }
+
+        // Perform the low-level call to the targetDEX using the correct multi-tenant signature
+        (bool success, ) = targetDEX.call{value: valueToSend}(
+            abi.encodeWithSignature("executeTradeFor(uint256,string,uint256,string)", tokenId, action, tradeAmount, assetInStrategy)
+        );
+        require(success, "DEX execution failed");
+
+        // --- FULL LOOP: Detect refund from DEX and credit agent back ---
+        uint256 balanceAfter = address(this).balance;
+        // If it was a REDUCE_ONLY, balanceAfter might be > (balanceBefore - valueToSend)
+        uint256 expectedBalance = balanceBefore - valueToSend;
+        if (balanceAfter > expectedBalance) {
+            uint256 refund = balanceAfter - expectedBalance;
+            vaultBalances[tokenId] += refund;
+        }
+
         emit StrategyExecuted(tokenId, strategyData, currentNonce);
     }
 
@@ -372,4 +400,9 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         }
         return false;
     }
+
+    /**
+     * @notice Allows MockDEX to refund A0GI tokens to the vault.
+     */
+    receive() external payable {}
 }

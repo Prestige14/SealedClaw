@@ -195,25 +195,62 @@ def execute_sealed_trade(intent: str):
     contract_pending = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_pending)
     contract_policy = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_policy)
     
+    # StrategyVault ABI for reading strategy class
+    strategy_vault_address = os.getenv("STRATEGY_VAULT_ADDRESS", "")
+    abi_strategy = [
+        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}], "name": "getStrategyClass", "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}], "stateMutability": "view", "type": "function"},
+        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}], "name": "getResolvedParams", "outputs": [{"internalType": "uint256", "name": "buyThresholdBps", "type": "uint256"}, {"internalType": "uint256", "name": "reduceThresholdBps", "type": "uint256"}, {"internalType": "uint256", "name": "buySizeBps", "type": "uint256"}, {"internalType": "uint8", "name": "strategyClassId", "type": "uint8"}], "stateMutability": "view", "type": "function"}
+    ]
+    strategy_class_id = 2  # default BALANCED_MERC
+    strategy_buy_bps = 200
+    strategy_reduce_bps = 300
+    strategy_size_bps = 500
+    
+    if strategy_vault_address:
+        strategy_vault_checksum = web3.to_checksum_address(strategy_vault_address)
+        contract_strategy = web3.eth.contract(address=strategy_vault_checksum, abi=abi_strategy)
+        try:
+            params = call_with_retry(lambda: contract_strategy.functions.getResolvedParams(token_id_env).call())
+            strategy_buy_bps, strategy_reduce_bps, strategy_size_bps, strategy_class_id = params
+            print(f"[+] Strategy Class: #{strategy_class_id} (Buy: {strategy_buy_bps}bps, Reduce: {strategy_reduce_bps}bps, Size: {strategy_size_bps}bps)")
+        except Exception as e:
+            print(f"[!] StrategyVault read failed, using defaults: {e}")
+    
     try:
         # Check Policy first
         policy = call_with_retry(lambda: contract_policy.functions.getPolicy(token_id_env).call())
-        if policy[4] == 0:  # dailyLimit == 0
-            print("[!] Policy not set for this Token ID. Attempting autonomous default configuration...")
-            default_policy = (
-                1000,                      # 10% max drawdown
-                500,                       # 5% max risk per trade
-                [],                        # all tokens allowed
-                [],                        # all DEXs allowed
-                web3.to_wei(1, 'ether')    # 1 ETH daily limit
+        target_dex_env = os.getenv("TARGET_DEX_ADDRESS", "0x7530623Cb630AEB93609Ba82c7edb9723fC4dc6F")
+        target_dex_checksum = web3.to_checksum_address(target_dex_env)
+        
+        is_dex_allowed = any(d.lower() == target_dex_checksum.lower() for d in policy[3])
+        
+        if policy[4] == 0 or not is_dex_allowed:
+            print(f"[!] Policy invalid or DEX {target_dex_checksum} not allowed. Attempting autonomous policy update...")
+            
+            # Preserve existing policy values if they exist
+            new_max_drawdown = policy[0] if policy[0] > 0 else 1000
+            new_risk_max = policy[1] if policy[1] > 0 else 500
+            new_daily_limit = policy[4] if policy[4] > 0 else web3.to_wei(1, 'ether')
+            
+            # Ensure the target DEX is in the list
+            new_allowed_dexs = list(set(list(policy[3]) + [target_dex_checksum]))
+            
+            new_policy = (
+                new_max_drawdown,
+                new_risk_max,
+                policy[2], # allowedTokens
+                new_allowed_dexs,
+                new_daily_limit
             )
-            tx_policy = contract_policy.functions.updatePolicy(token_id_env, default_policy).build_transaction({
+            
+            print(f"[*] Updating policy on-chain: {new_policy}")
+            tx_policy = contract_policy.functions.updatePolicy(token_id_env, new_policy).build_transaction({
                 "from": relayer_account.address,
                 "nonce": web3.eth.get_transaction_count(relayer_account.address),
             })
             signed_policy_tx = web3.eth.account.sign_transaction(tx_policy, relayer_pk)
             tx_hash = web3.eth.send_raw_transaction(signed_policy_tx.raw_transaction)
-            print(f"[+] Autonomous Policy set! Tx: {web3.to_hex(tx_hash)}")
+            print(f"[+] Autonomous Policy sync complete! Tx: {web3.to_hex(tx_hash)}")
             web3.eth.wait_for_transaction_receipt(tx_hash)
 
         current_nonce = call_with_retry(lambda: contract_nonce.functions.nonces(token_id_env).call())
@@ -243,11 +280,29 @@ def execute_sealed_trade(intent: str):
         if is_pending_transfer:
             cmd.extend(["--pending-transfer", "--new-owner", str(new_owner)])
             
+        # Build env for TEE worker — override with orchestrator's resolved values
+        tee_env = os.environ.copy()
+        tee_env["CURRENT_NONCE"] = str(current_nonce)
+        tee_env["TOKEN_ID"] = str(token_id_env)
+        tee_env["POLICY_VAULT_ADDRESS"] = policy_vault_address
+        tee_env["TARGET_DEX_ADDRESS"] = target_dex_checksum
+        # Inject strategy class for dynamic TEE decision-making
+        tee_env["STRATEGY_CLASS_ID"] = str(strategy_class_id)
+        tee_env["STRATEGY_BUY_BPS"] = str(strategy_buy_bps)
+        tee_env["STRATEGY_REDUCE_BPS"] = str(strategy_reduce_bps)
+        tee_env["STRATEGY_SIZE_BPS"] = str(strategy_size_bps)
+        
+        # Ensure TEE worker uses UTF-8 even on Windows environments with CP1252
+        tee_env["PYTHONIOENCODING"] = "utf-8"
+        tee_env["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
+
         result = call_with_retry(lambda: subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            check=True
+            encoding='utf-8',
+            check=True,
+            env=tee_env
         ))
         print("[+] TEE Worker executed successfully.\n")
         print("    --- TEE Worker Console Output ---")

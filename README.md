@@ -6,19 +6,19 @@ SealedClaw is an autonomous on-chain trading agent built on the 0G ecosystem. Ea
 
 ---
 
-## 🚀 Deployed Contracts — 0G Galileo Testnet
+## 🚀 Deployed Contracts — 0G Galileo Testnet (v2)
 
-The following infrastructure is deployed and verified on the 0G Galileo Testnet:
+The core infrastructure has been upgraded to **v2** to support Full-Loop trading and Intent-Aware AI logic.
 
 | Contract | Address |
 |---|---|
-| **SealedClawAgent** (ERC-7857 iNFT) | [`0xA19c38b95ac185ae77ee29A725E5b17C1cBFDa00`](https://chainscan-galileo.0g.ai/address/0xA19c38b95ac185ae77ee29A725E5b17C1cBFDa00) |
-| **PolicyVault** (Risk & Handover) | [`0x3eC0166E98c48E57969c82A68Fa60974F94157B4`](https://chainscan-galileo.0g.ai/address/0x3eC0166E98c48E57969c82A68Fa60974F94157B4) |
+| **SealedClawAgent** (ERC-7857 iNFT) | [`0x30ff3D6cF8bf67adeC982A938EF65F627A0e4f76`](https://chainscan-galileo.0g.ai/address/0x30ff3D6cF8bf67adeC982A938EF65F627A0e4f76) |
+| **PolicyVault** (Risk & Handover) | [`0x6f5eF739ff6121Ffecfe75A9e9f6B37Bc462d0Dc`](https://chainscan-galileo.0g.ai/address/0x6f5eF739ff6121Ffecfe75A9e9f6B37Bc462d0Dc) |
+| **MockDEX** (Full-Loop Trading) | [`0xcf37B8CE11477101E6e1700a6c4e27d32E962D53`](https://chainscan-galileo.0g.ai/address/0xcf37B8CE11477101E6e1700a6c4e27d32E962D53) |
 
 - **Network**: 0G Galileo Testnet · **Chain ID**: `16602`
-- **RPC**: `https://evmrpc-testnet.0g.ai`
 - **Telegram Bot**: [@sealed_claw_bot](https://t.me/sealed_claw_bot)
-- **Web Dashboard**: Runs locally via `frontend/`
+- **Web Dashboard**: https://prestige-sealed-claw.vercel.app (or local `npm run dev`)
 
 ---
 
@@ -136,9 +136,10 @@ A React-based SPA in the `frontend/` directory providing a visual cockpit for th
 - **iNFT Inventory Management**: Automatic detection and one-click selection of owned Agentic iNFTs.
 - **Sovereign Accounting**: Supports the new **Per-TokenID Vault** system, allowing each agent to have its own isolated balance.
 
-### 2. Telegram NLP Interaction
+### 2. Telegram NLP Interaction (Powered by GPT-4o-mini)
 - Users chat with their agent via **Telegram**, powered by the **OpenClaw SDK**.
-- Messages processed as *Intents* (e.g., "Optimize yield with 5% risk").
+- **Intent-Aware Decision Making**: The agent understands nuances like "I'm feeling FOMO" or "Optimize for safety" and adjusts its technical analysis rationale accordingly.
+- **Full-Loop Cycle (Buy & SELL)**: Unlike static mocks, SealedClaw now supports a complete economic cycle. When the agent sells, native A0GI tokens are refunded from the DEX back to the user's `PolicyVault` balance.
 - Enclave-verified execution triggered directly from chat.
 
 ---
