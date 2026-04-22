@@ -294,7 +294,7 @@ def execute_sealed_trade(intent: str):
         
         # Ensure TEE worker uses UTF-8 even on Windows environments with CP1252
         tee_env["PYTHONIOENCODING"] = "utf-8"
-        tee_env["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
+        tee_env["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY", "")
 
         result = call_with_retry(lambda: subprocess.run(
             cmd,

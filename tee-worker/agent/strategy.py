@@ -148,50 +148,7 @@ def make_trading_decision(
         "technical_summary": tech_rationale
     }
 
-    # -----------------------------------------------------------------------
-    # Decision Logic (Technical Signal)
-    # -----------------------------------------------------------------------
-    action = ACTION_HOLD
-    tech_rationale = "Neutral market conditions."
 
-    if price_change_pct > params.buy_threshold_pct:
-        action = ACTION_BUY
-        tech_rationale = f"Price cross above {params.buy_threshold_pct}% buy threshold."
-    elif price_change_pct < -params.reduce_threshold_pct:
-        action = ACTION_REDUCE_ONLY
-        tech_rationale = f"Price cross below -{params.reduce_threshold_pct}% reduce threshold."
-
-    # -----------------------------------------------------------------------
-    # AI Nudge: Intent-Aware Decision Adjustment
-    # -----------------------------------------------------------------------
-    # If the user says "Buy now", and we are at least half-way to target, AI allows it.
-    action = analyze_intent_override(intent, action, price_change_pct, params.buy_threshold_pct)
-
-    # Re-calculate amount if action changed
-    final_amount_wei = buy_amount_wei if action == ACTION_BUY else 0
-
-    # -----------------------------------------------------------------------
-    # AI Rationale: Human-like explanation
-    # -----------------------------------------------------------------------
-    ai_rationale = generate_ai_rationale(
-        technical_decision=action,
-        price=median_price,
-        price_change_pct=price_change_pct,
-        strategy_name=params.class_name,
-        user_intent=intent
-    )
-
-    return {
-        "action": action,
-        "amount_wei": final_amount_wei,
-        "asset": asset,
-        "rationale": ai_rationale,
-        "current_price": median_price,
-        "price_change_pct": round(price_change_pct, 4),
-        "token_id": token_id,
-        "strategy_class": params.class_name,
-        "technical_summary": tech_rationale
-    }
 
 
 def build_updated_memory(

@@ -438,7 +438,7 @@ export default function DashboardPage({ account }) {
 
   // ── Pie chart data ────────────────────────────────────────────────────────
   const unswapped0G = contractCaps.hasVaultBalance 
-        ? tokenVaultBalance - virtualPortfolio.nativeSwapped
+        ? tokenVaultBalance 
         : userLegacyBalance;
 
   const pieData = [

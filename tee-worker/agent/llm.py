@@ -19,13 +19,16 @@ def generate_ai_rationale(
     user_intent: str = "",
 ) -> str:
     """
-    Generate a professional, contextual rationale using GPT-4o-mini.
+    Generate a professional, contextual rationale using Groq API (Llama 3).
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return f"[MOCK AI] ({strategy_name}) Mengikuti instruksi Anda '{user_intent}'. Mengeksekusi {technical_decision} di harga ${price:.2f}."
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.groq.com/openai/v1"
+    )
     
     system_prompt = (
         "You are the voice of a sovereign AI trading agent inside a TEE enclave. "
@@ -47,7 +50,7 @@ def generate_ai_rationale(
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama3-8b-8192",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_context}
@@ -57,8 +60,60 @@ def generate_ai_rationale(
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        # Better fallback if 429 or other API error
+        # Better fallback if API error
         return f"[AI FALLBACK] Memproses '{user_intent}' menggunakan strategi {strategy_name}. Keputusan: {technical_decision} di ${price:.2f}."
+
+def analyze_intent_action(intent: str) -> str:
+    """
+    Use free Groq AI API to classify the user's intent strongly.
+    Returns: "BUY", "SELL" (for REDUCE_ONLY), or "HOLD".
+    If no API key or intent is empty, returns "HOLD".
+    """
+    if not intent:
+        return "HOLD"
+        
+    api_key = os.getenv("GROQ_API_KEY")
+    # If no API key, use aggressive keyword fallback
+    if not api_key:
+        intent_lower = intent.lower()
+        if "beli" in intent_lower or "buy" in intent_lower:
+            return "BUY"
+        elif "jual" in intent_lower or "sell" in intent_lower:
+            return "REDUCE_ONLY"
+        return "HOLD"
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.groq.com/openai/v1"
+    )
+    
+    prompt = (
+        "Tugas Anda hanya mengklasifikasikan intent trading dari teks user. "
+        "Jawab HANYA dengan satu kata: 'BUY', 'SELL', atau 'HOLD'. Tanpa basa-basi.\n"
+        f"Input User: '{intent}'"
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0.0,
+        )
+        ans = response.choices[0].message.content.strip().upper()
+        if "BUY" in ans or "BELI" in ans:
+            return "BUY"
+        elif "SELL" in ans or "JUAL" in ans:
+            return "REDUCE_ONLY"
+        return "HOLD"
+    except Exception:
+        # Fallback to simple keyword check
+        intent_lower = intent.lower()
+        if "beli" in intent_lower or "buy" in intent_lower:
+            return "BUY"
+        elif "jual" in intent_lower or "sell" in intent_lower:
+            return "REDUCE_ONLY"
+        return "HOLD"
 
 def analyze_intent_override(
     intent: str,
@@ -67,20 +122,20 @@ def analyze_intent_override(
     buy_threshold: float,
 ) -> str:
     """
+    Aggressive override logic.
     Check if the user's explicit intent should nudge a HOLD into a BUY/REDUCE.
-    Only allows nudging if the technical signal is 'near' a threshold.
+    Overrides minor market fluctuations if the user gives a firm command.
     """
-    if not intent:
-        return current_action
-        
-    intent_lower = intent.lower()
+    forced_action = analyze_intent_action(intent)
     
-    # Heuristic: if user says "buy" and price is NOT crashing (change >= 0)
-    # or if it's the first run (change=0).
-    if "buy" in intent_lower or "beli" in intent_lower:
-        if current_action == "HOLD":
-            # Allow BUY if price is stable or rising, even if it hasn't hit threshold
-            if price_change_pct >= 0:
-                return "BUY"
+    if forced_action == "BUY" and current_action != "BUY":
+        # Allow BUY even if price slightly dropped (e.g. up to -5%), to honor user command.
+        if price_change_pct >= -5.0:
+            return "BUY"
+            
+    if forced_action == "REDUCE_ONLY" and current_action != "REDUCE_ONLY":
+        # Allow SELL even if price increased slightly (up to +5%)
+        if price_change_pct <= 5.0:
+            return "REDUCE_ONLY"
             
     return current_action
