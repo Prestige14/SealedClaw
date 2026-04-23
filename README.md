@@ -1,178 +1,121 @@
-# SealedClaw Trader
+# SealedClaw - Sovereign iNFT Trading Agent
 
-**Sovereign iNFT Trading Agent — 0G APAC Hackathon 2026**
+## Project Overview
 
-SealedClaw is an autonomous on-chain trading agent built on the 0G ecosystem. Each agent is represented as an **ERC-7857 Agentic iNFT** with a cryptographically enforced risk policy vault and a **Python TEE worker** that generates tamper-proof trading signals from inside a simulated Trusted Execution Environment.
+SealedClaw is an advanced autonomous, sovereign iNFT trading agent framework built natively for the 0G ecosystem. The project leverages **OpenClaw SDK**, **0G Storage**, and a customized Python-based **TEE (Trusted Execution Environment)** worker to orchestrate cryptographically secure, AI-driven on-chain trading strategies.
 
----
-
-## 🚀 Deployed Contracts — 0G Galileo Testnet (v2)
-
-The core infrastructure has been upgraded to **v2** to support Full-Loop trading and Intent-Aware AI logic.
-
-| Contract | Address |
-|---|---|
-| **SealedClawAgent** (ERC-7857 iNFT) | [`0x30ff3D6cF8bf67adeC982A938EF65F627A0e4f76`](https://chainscan-galileo.0g.ai/address/0x30ff3D6cF8bf67adeC982A938EF65F627A0e4f76) |
-| **PolicyVault** (Risk & Handover) | [`0x6f5eF739ff6121Ffecfe75A9e9f6B37Bc462d0Dc`](https://chainscan-galileo.0g.ai/address/0x6f5eF739ff6121Ffecfe75A9e9f6B37Bc462d0Dc) |
-| **MockDEX** (Full-Loop Trading) | [`0xcf37B8CE11477101E6e1700a6c4e27d32E962D53`](https://chainscan-galileo.0g.ai/address/0xcf37B8CE11477101E6e1700a6c4e27d32E962D53) |
-
-- **Network**: 0G Galileo Testnet · **Chain ID**: `16602`
-- **Telegram Bot**: [@sealed_claw_bot](https://t.me/sealed_claw_bot)
-- **Web Dashboard**: https://prestige-sealed-claw.vercel.app (or local `npm run dev`)
+Rather than relying purely on centralized servers or unverified bot scripts, SealedClaw operates under an "Intent-driven" execution model:
+1. Users provide high-level intents (e.g., "Optimize yield with max 5% risk") via an NLP interface (Telegram Bot / CLI).
+2. The bot uses the Groq-powered Llama 3 LLM (migrated from OpenAI for cost-efficiency and decentralization) to parse trading intent.
+3. The TEE worker processes the strategy within a secure enclave, interacting with real-time on-chain data and producing an ECDSA signature over the payload.
+4. The strategy payload is cached to 0G Storage for persistent cross-cycle memory.
+5. A smart contract (`PolicyVault`) deployed on the 0G Galileo testnet validates the TEE's signature before allowing execution on a target DEX.
 
 ---
 
-## Architecture Overview
+## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  0G Galileo Testnet                     │
-│                                                         │
-│   ┌──────────────────┐    ┌──────────────────────────┐  │
-│   │ SealedClawAgent  │    │      PolicyVault         │  │
-│   │   (ERC-7857)     │◄───│  executeWithProof()      │  │
-│   │                  │    │  • ecrecover(signature)  │  │
-│   │  Agentic iNFT    │    │  • nonce anti-replay     │  │
-│   │  + 0G Storage    │    │  • risk policy checks    │  │
-│   │  CID metadata    │    │  • DEX allowlist         │  │
-│   └──────────────────┘    └──────────┬───────────────┘  │
-│                                      │ verify sig        │
-└──────────────────────────────────────┼──────────────────┘
-                                       │
-                    ┌──────────────────▼──────────────────┐
-                    │        TEE Worker (Python)           │
-                    │                                      │
-                    │  ┌─────────┐  ┌──────────────────┐  │
-                    │  │ Enclave │  │  Oracle Agg.     │  │
-                    │  │ ECDSA   │  │  Pyth+CL+TWAP    │  │
-                    │  │ keypair │  │  median price    │  │
-                    │  │ AES-GCM │  └──────────────────┘  │
-                    │  │ sealing │  ┌──────────────────┐  │
-                    │  └────┬────┘  │ Strategy Engine  │  │
-                    │       │sign   │ BUY/HOLD/REDUCE  │  │
-                    │  ┌────▼────┐  └──────────────────┘  │
-                    │  │Payload  │  ┌──────────────────┐  │
-                    │  │Builder  │  │ 0G Storage       │  │
-                    │  │ABI-enc. │  │ Encrypted Memory │  │
-                    │  └─────────┘  └──────────────────┘  │
-                    └─────────────────────────────────────┘
+SealedClaw combines off-chain AI reasoning, secure enclave execution, and on-chain verification.
+
+```mermaid
+flowchart TD
+    User([User Intent]) -->|Telegram / CLI| NLP[OpenClaw Agent / Groq LLM]
+    NLP -->|Parsed Strategy| Orchestrator[Python Orchestrator]
+    
+    subgraph Secure TEE Enclave 
+        Orchestrator --> TEE[TEE Worker]
+        TEE --> Sign([ECDSA Signing])
+        TEE --> Memory[Agent State Engine]
+    end
+
+    Memory <-->|Read / Write Blob| Storage[(0G Storage Testnet)]
+    Sign -->|Signed Payload| Relayer[Transaction Relayer]
+    Relayer -->|tx: executeWithProof| EVM[0G Galileo Testnet]
+    
+    subgraph Blockchain 
+        EVM --> PV[PolicyVault Contract]
+        PV -->|Signature Verification| SC[SealedClawAgent Contract]
+        SC --> DEX[Target DEX]
+    end
 ```
 
+### Technical Description
+- **OpenClaw Agent Layer**: Parses raw human intelligence statements into actionable protocol parameters utilizing an LLM mechanism.
+- **TEE Subprocess Enclave**: Ensures that the execution and generation of the signature was processed faithfully according to the strategy without data tampering or leakage.
+- **0G Infrastructure Layer**: 
+   - 0G EVM Galileo confirms the cryptographic signature matching the authorized TEE public key.
+   - 0G Storage acts as the decentralized memory cache so the agent can remember past trading contexts.
+
 ---
 
-## Phase 1 - Smart Contracts Foundation
+## 0G Modules Used & How They Support The Product
 
-### `SealedClawAgent.sol` — ERC-7857 Agentic iNFT
+### 1. 0G Galileo Testnet (EVM)
+- **What it is:** The modular Layer 1 execution environment for 0G.
+- **How it supports the product:** Hosts the `SealedClawAgent` and `PolicyVault` ERC-7857 compliant smart contracts. The Galileo testnet acts as the immutable verification layer. It guarantees that trades can only be routed to a Decentralized Exchange (DEX) if the transaction strictly carries a valid ECDSA signature from the registered TEE public key, thereby preventing replay attacks via dynamic on-chain nonces.
 
-- Standard ERC-721 NFT where each token represents an autonomous trading agent
-- Metadata CID stored on-chain with `0g://` prefix → points to encrypted agent config on 0G Storage
-- Owner-controlled metadata updates and collaborator authorization
+### 2. 0G Storage
+- **What it is:** The modular Decentralized Storage network integrated into the 0G ecosystem.
+- **How it supports the product:** Autonomous agents require "memory" to preserve context between iterations (e.g., tracking moving averages or evaluating past trade performances). Storing complete agent states entirely on-chain is expensive. SealedClaw securely uploads the encrypted TEE execution memory JSON to **0G Storage** (`https://rpc-storage-testnet.0g.ai`) returning a `file_root_hash`. During the next cycle, the TEE worker fetches this blob from 0G Storage, allowing the agent to continuously execute stateful, time-aware intent trading without clogging EVM blockspace.
 
-### `PolicyVault.sol` — Risk Policy + TEE Verification Vault
+---
 
-Core execution function:
+## Local Deployment & Reproduction Steps
 
-```solidity
-function executeWithProof(
-    uint256 tokenId,
-    bytes calldata strategyData,
-    uint256 tradeAmount,
-    address targetDEX,
-    bytes calldata signature,
-    uint256 deadline
-) external
+### Prerequisites
+- Node.js (v18+)
+- Python (3.10+) 
+- A wallet with 0G Galileo Testnet Tokens.
+
+### Step 1: Environment Setup
+Clone the repository and prepare the environment variables.
+
+```bash
+git clone <your-repo-url>
+cd SealedClaw
+
+# Copy default env
+cp .env.example .env
+```
+Edit `.env` and fill in your keys:
+```env
+PRIVATE_KEY=your_wallet_private_key
+RPC_URL=https://evmrpc-testnet.0g.ai
+RELAYER_PRIVATE_KEY=your_relayer_private_key
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token # (optional)
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
-Security checks: 
-- Anti-replay nonces, TEE ECDSA recovery, daily spend limits, and DEX allowlists.
+### Step 2: Smart Contract Deployment
+Deploy the contracts to the 0G Galileo Testnet.
 
----
-
-## Phase 2 - TEE Worker Enclave Simulator
-
-Python package simulating a **Trusted Execution Environment** via 0G Compute Sealed Inference.
-
-### Execution Cycle
-
+```bash
+npm install
+npx hardhat compile
+npx hardhat run scripts/deploy.ts --network galileo
 ```
-[1] TEE INIT       Generate deterministic ECDSA + AES-256 keys via HKDF
-[2] ORACLE         Fetch Pyth + Chainlink prices; Compute median
-[3] MEMORY READ    Decrypt agent memory blob from 0G Storage
-[4] AGENT          Decision logic: BUY (+2% price) | REDUCE (-3%) | HOLD
-[5] PAYLOAD        ABI-encode & Sign payload for executeWithProof()
-[6] MEMORY WRITE   Encrypt & Upload updated state to 0G Storage
+*Note down the deployed contract addresses (PolicyVault, StrategyVault, etc.) and add them to your `.env`.*
+
+### Step 3: Python Environment & Agent Initialization
+Install Python dependencies and run the OpenClaw orchestrator to trigger a trading cycle.
+
+```bash
+# Optional: Setup virtual environment
+# python -m venv venv && source venv/bin/activate
+
+pip install -r requirements.txt
+
+# Option A: Run single CLI strategy execution
+python orchestrator.py
+
+# Option B: Run via interactive Telegram Bot
+python telegram_bot.py
 ```
 
 ---
 
-## Phase 3 - OpenClaw Agent SDK & 0G Storage integration
+## Reviewer Notes & Test Accounts
 
-The top-level `orchestrator.py` acts as an autonomous NLP-driven AI Agent using the **OpenClaw SDK Framework**.
-- **NLP Intent Routing**: User sets a prompt -> Agent calls `execute_sealed_trade` skill autonomously via OpenAI.
-- **Dynamic Nonce Sync**: Fetches anti-replay nonces directly from 0G Galileo Testnet.
-- **0G Public Storage**: Enclave memory blobs are stored on the public RPC at `https://rpc-storage-testnet.0g.ai`.
-
----
-
-## Phase 4 - Secure Handover Protocol
-
-SealedClaw introduces a **Secure Handover Protocol** for Agentic iNFTs, allowing agents to be traded safely without exposing strategies.
-
-1. **Initiate Transfer**: Owner calls `initiateTransfer(tokenId, newOwner)`.
-2. **48-Hour Cooldown**: Mandatory window where the Agent enters **Reduce-Only** mode.
-3. **TEE Enforcement**: TEE Worker detects the pending transfer and automatically overrides BUY signals with REDUCE-ONLY.
-4. **Memory Re-encryption**: TEE worker re-encrypts its decentralized memory for the new owner post-cooldown.
-
----
-
-## Phase 5 - Frontend Dashboard & Telegram Bot Integration
-
-SealedClaw is now a complete end-to-end ecosystem:
-
-### 1. Web Dashboard (Premium UI)
-A React-based SPA in the `frontend/` directory providing a visual cockpit for the SealedClaw ecosystem:
-- **Contract Capability Detection**: Hybrid UI that automatically detects if the deployed contract is Legacy or Upgraded via silent `eth_call` probes.
-- **Real-Time Portfolio Allocation**: High-performance dashboard with Recharts visualization for asset allocation.
-- **iNFT Inventory Management**: Automatic detection and one-click selection of owned Agentic iNFTs.
-- **Sovereign Accounting**: Supports the new **Per-TokenID Vault** system, allowing each agent to have its own isolated balance.
-
-### 2. Telegram NLP Interaction (Powered by GPT-4o-mini)
-- Users chat with their agent via **Telegram**, powered by the **OpenClaw SDK**.
-- **Intent-Aware Decision Making**: The agent understands nuances like "I'm feeling FOMO" or "Optimize for safety" and adjusts its technical analysis rationale accordingly.
-- **Full-Loop Cycle (Buy & SELL)**: Unlike static mocks, SealedClaw now supports a complete economic cycle. When the agent sells, native A0GI tokens are refunded from the DEX back to the user's `PolicyVault` balance.
-- Enclave-verified execution triggered directly from chat.
-
----
-
-## 🛠 Feature Unfreeze: Per-TokenID Withdrawal
-
-In the final submission phase, we introduced **Enhanced Accounting** to `PolicyVault.sol`:
-- **Legacy Path**: Standard `deposit()`/`withdraw(amount)` for backward compatibility with existing testnet funds.
-- **Sovereign Path**: `deposit(tokenId)` and `withdraw(tokenId, amount)` for isolated per-agent fund management.
-- **Hybrid Support**: The frontend gracefully falls back to Legacy mode if the contract has not yet been upgraded, ensuring zero downtime.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Smart Contracts | Solidity `^0.8.24`, EVM `cancun` |
-| Blockchain | 0G Galileo Testnet (Chain ID: 16602) |
-| Storage Protocol | 0G Storage (`0g://` CID prefix) |
-| TEE Simulation | Python 3.11+, `eth-keys`, `cryptography`, `eth-abi` |
-| Bot Interface | Python-Telegram-Bot (v20+) |
-| Frontend UI | React + Vite + Tailwind CSS |
-
----
-
-## Roadmap
-
-- [x] **Phase 1** - Smart contract foundation & testnet deployment
-- [x] **Phase 2** - TEE worker simulation & ECDSA compatibility
-- [x] **Phase 3** - Live 0G Storage integration & OpenClaw Agent SDK
-- [x] **Phase 4** - Secure Handover Protocol & Reduce-Only mode
-- [x] **Phase 5** - Frontend Dashboard & Telegram Bot Integration
-
----
-**SealedClaw is ready to revolutionize autonomous agency on the 0G Network. 🛡️⚡**
+- **0G Galileo Faucet:** To test the product, ensure your `PRIVATE_KEY` and `RELAYER_PRIVATE_KEY` wallets are funded. You can obtain testnet `$A0GI` tokens at the official [0G Faucet](https://faucet.0g.ai).
+- **Groq API Fallback:** The codebase has been migrated to use `Groq` for high-speed, free Llama 3 inference. If you do not provide a `GROQ_API_KEY` (or `OPENAI_API_KEY`), the `orchestrator.py` script contains a graceful fallback that bypasses the NLP reasoning and natively executes the default `execute_sealed_trade` skill for testing/judging purposes.
+- **Smart Contract Verification:** Ensure that `TEE_PUB_KEY` is properly whitelisted in the `PolicyVault` contract upon deployment for end-to-end ECDSA signature verification to succeed.
