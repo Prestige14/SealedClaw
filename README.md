@@ -58,6 +58,14 @@ flowchart TD
 - **What it is:** The modular Decentralized Storage network integrated into the 0G ecosystem.
 - **How it supports the product:** Autonomous agents require "memory" to preserve context between iterations (e.g., tracking moving averages or evaluating past trade performances). Storing complete agent states entirely on-chain is expensive. SealedClaw securely uploads the encrypted TEE execution memory JSON to **0G Storage** (`https://rpc-storage-testnet.0g.ai`) returning a `file_root_hash`. During the next cycle, the TEE worker fetches this blob from 0G Storage, allowing the agent to continuously execute stateful, time-aware intent trading without clogging EVM blockspace.
 
+### 3. 0G Verifiable Compute (TEE)
+- **What it is:** The secure execution layer for 0G that ensures computations are correct and private.
+- **How it supports the product:** SealedClaw uses a **TEE Worker** (simulated for TEE-hardware compatibility) to handle the sensitive "brains" of the trading operation. By executing the trading strategy inside a Trusted Execution Environment, the project ensures that:
+    - The private keys used for signing transactions are never exposed (even to the node operator).
+    - The trading logic hasn't been tampered with or modified.
+    - The ECDSA signature produced is cryptographically linked to the specific TEE code (attestation).
+    This transforms a simple trading bot into a **Sovereign iNFT Agent** that has its own identity and verifiable integrity.
+
 ---
 
 ## Local Deployment & Reproduction Steps
