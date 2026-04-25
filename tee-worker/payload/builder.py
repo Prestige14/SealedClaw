@@ -61,12 +61,14 @@ def build_strategy_data(decision: dict[str, Any]) -> bytes:
     """
     action: str = decision["action"]
     amount_wei: int = int(decision["amount_wei"])
-    asset: str = decision["asset"]
+    # Address parsing from strategy
+    token_in: str = decision.get("token_in", "0x0000000000000000000000000000000000000000")
+    token_out: str = decision.get("token_out", "0x0000000000000000000000000000000000000000")
 
-    # Encode as Solidity: abi.encode(string, uint256, string)
+    # Encode as Solidity: abi.encode(string, uint256, address, address)
     encoded: bytes = eth_abi.encode(
-        ["string", "uint256", "string"],
-        [action, amount_wei, asset],
+        ["string", "uint256", "address", "address"],
+        [action, amount_wei, token_in, token_out],
     )
     return encoded
 

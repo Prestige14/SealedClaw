@@ -197,6 +197,50 @@ def fetch_twap_price(asset: str) -> float:
     noise_pct = random.uniform(-0.003, 0.003)
     return round(base * (1 + noise_pct), 4)
 
+def get_onchain_chainlink_price(asset: str) -> float:
+    import os
+    from web3 import Web3
+
+    RPC_URL = os.getenv("OG_RPC_URL", "https://evmrpc.0g.ai")
+    VERIFIER_ADDRESS = os.getenv("CHAINLINK_VERIFIER_ADDRESS")
+
+    if not VERIFIER_ADDRESS:
+        print(f"[ORACLE] CHAINLINK_VERIFIER_ADDRESS not set. Skipping on-chain fetch for {asset}.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.004, 0.006)
+        return round(base * (1 + noise_pct), 4)
+
+    try:
+        web3 = Web3(Web3.HTTPProvider(RPC_URL))
+        if not web3.is_connected():
+            raise ConnectionError("Web3 provider not connected")
+
+        abi = [
+            {
+                "inputs": [{"internalType": "string", "name": "pair", "type": "string"}],
+                "name": "getPrice",
+                "outputs": [
+                    {"internalType": "uint256", "name": "price", "type": "uint256"},
+                    {"internalType": "uint256", "name": "updatedAt", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
+
+        contract = web3.eth.contract(address=VERIFIER_ADDRESS, abi=abi)
+        pair = f"{asset.upper()}/USD"
+        price_data = contract.functions.getPrice(pair).call()
+        
+        price = float(price_data[0]) / (10 ** 8)
+        return round(price, 4)
+
+    except Exception as e:
+        print(f"[ORACLE] On-chain Chainlink fetch failed: {e}. Using fallback.")
+        base = _base_price(asset)
+        noise_pct = random.uniform(-0.004, 0.006)
+        return round(base * (1 + noise_pct), 4)
+
 
 # ---------------------------------------------------------------------------
 # Aggregation & deviation check
@@ -236,14 +280,16 @@ def get_median_price(asset: str) -> tuple[float, dict[str, float]]:
     pyth_price: float = fetch_pyth_price(asset)
     chainlink_price: float = fetch_chainlink_price(asset)
     twap_price: float = fetch_twap_price(asset)
+    onchain_price: float = get_onchain_chainlink_price(asset)
 
     oracle_prices: dict[str, float] = {
         "pyth": pyth_price,
         "chainlink": chainlink_price,
         "twap": twap_price,
+        "onchain": onchain_price,
     }
 
-    prices: list[float] = [pyth_price, chainlink_price, twap_price]
+    prices: list[float] = [pyth_price, chainlink_price, twap_price, onchain_price]
     median_price: float = statistics.median(prices)
 
     # Deviation check: MAX - MIN relative to median

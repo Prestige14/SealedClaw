@@ -33,10 +33,18 @@ async function main() {
     );
   }
 
-  // ── 3. Deploy PolicyVault ─────────────────────────────────────────────────
+  // ── 3. Deploy TEEAttestationRegistry ─────────────────────────────────────
+  console.log("\nDeploying TEEAttestationRegistry...");
+  const TEEAttestationRegistry = await ethers.getContractFactory("TEEAttestationRegistry");
+  const registry = await TEEAttestationRegistry.deploy();
+  await registry.waitForDeployment();
+  const registryAddress = await registry.getAddress();
+  console.log(`TEEAttestationRegistry deployed to: ${registryAddress}`);
+
+  // ── 4. Deploy PolicyVault ─────────────────────────────────────────────────
   console.log("\nDeploying PolicyVault...");
   const PolicyVault = await ethers.getContractFactory("PolicyVault");
-  const vault = await PolicyVault.deploy(agentNFTAddress, teeEnclaveAddr);
+  const vault = await PolicyVault.deploy(agentNFTAddress, teeEnclaveAddr, registryAddress);
   await vault.waitForDeployment();
   const vaultAddress = await vault.getAddress();
   console.log(`PolicyVault deployed to: ${vaultAddress}`);
@@ -49,13 +57,42 @@ async function main() {
   const strategyVaultAddress = await strategyVault.getAddress();
   console.log(`StrategyVault deployed to: ${strategyVaultAddress}`);
 
-  // ── 5. Deploy MockDEX ─────────────────────────────────────────────────────
-  console.log("\nDeploying MockDEX...");
-  const MockDEX = await ethers.getContractFactory("MockDEX");
-  const dex = await MockDEX.deploy();
-  await dex.waitForDeployment();
-  const dexAddress = await dex.getAddress();
-  console.log(`MockDEX deployed to: ${dexAddress}`);
+  // ── 5. Deploy Adapters ─────────────────────────────────────────────────────
+  console.log("\nDeploying MockDEXAdapter...");
+  const MockDEXAdapter = await ethers.getContractFactory("MockDEXAdapter");
+  const dexAdapter = await MockDEXAdapter.deploy();
+  await dexAdapter.waitForDeployment();
+  const dexAdapterAddress = await dexAdapter.getAddress();
+  console.log(`MockDEXAdapter deployed to: ${dexAdapterAddress}`);
+
+  console.log("Approving MockDEXAdapter in PolicyVault...");
+  await vault.setAdapter(dexAdapterAddress, true);
+
+  console.log("\nDeploying XSwapAdapter (Warning: using deployer address as mock router/wNative)...");
+  const XSwapAdapter = await ethers.getContractFactory("XSwapAdapter");
+  const xSwap = await XSwapAdapter.deploy(deployer.address, deployer.address);
+  await xSwap.waitForDeployment();
+  const xSwapAddress = await xSwap.getAddress();
+  console.log(`XSwapAdapter deployed to: ${xSwapAddress}`);
+
+  console.log("Approving XSwapAdapter in PolicyVault...");
+  await vault.setAdapter(xSwapAddress, true);
+
+  // ── 6. Deploy ChainlinkOracleVerifier ─────────────────────────────────────
+  console.log("\nDeploying ChainlinkOracleVerifier...");
+  const ChainlinkOracleVerifier = await ethers.getContractFactory("ChainlinkOracleVerifier");
+  const oracleVerifier = await ChainlinkOracleVerifier.deploy();
+  await oracleVerifier.waitForDeployment();
+  const oracleVerifierAddress = await oracleVerifier.getAddress();
+  console.log(`ChainlinkOracleVerifier deployed to: ${oracleVerifierAddress}`);
+
+  // ── 7. Deploy AgentMarketplace ─────────────────────────────────────────────
+  console.log("\nDeploying AgentMarketplace...");
+  const AgentMarketplace = await ethers.getContractFactory("AgentMarketplace");
+  const marketplace = await AgentMarketplace.deploy(agentNFTAddress);
+  await marketplace.waitForDeployment();
+  const marketplaceAddress = await marketplace.getAddress();
+  console.log(`AgentMarketplace deployed to: ${marketplaceAddress}`);
 
   // ── 6. Save deployment info ───────────────────────────────────────────────
   const deploymentsDir = path.join(__dirname, "..", "deployments");
@@ -67,9 +104,13 @@ async function main() {
     deployedAt: new Date().toISOString(),
     deployer: deployer.address,
     SealedClawAgent: agentNFTAddress,
+    TEEAttestationRegistry: registryAddress,
     PolicyVault: vaultAddress,
     StrategyVault: strategyVaultAddress,
-    MockDEX: dexAddress,
+    MockDEXAdapter: dexAdapterAddress,
+    XSwapAdapter: xSwapAddress,
+    ChainlinkOracleVerifier: oracleVerifierAddress,
+    AgentMarketplace: marketplaceAddress,
     teeEnclavePubKey: teeEnclaveAddr,
   };
 
@@ -77,11 +118,11 @@ async function main() {
   fs.writeFileSync(outPath, JSON.stringify(payload, null, 2));
   console.log(`\n📁 Saved → ${outPath}`);
 
-  // ── 7. Print .env setup ───────────────────────────────────────────────────
   console.log("\n─── Add to your .env ─────────────────────────────────────────");
   console.log(`POLICY_VAULT_ADDRESS=${vaultAddress}`);
   console.log(`STRATEGY_VAULT_ADDRESS=${strategyVaultAddress}`);
-  console.log(`TARGET_DEX_ADDRESS=${dexAddress}`);
+  console.log(`TARGET_DEX_ADDRESS=${dexAdapterAddress}`);
+  console.log(`CHAINLINK_VERIFIER_ADDRESS=${oracleVerifierAddress}`);
   console.log("──────────────────────────────────────────────────────────────\n");
 }
 

@@ -13,6 +13,7 @@ All 7 tests must pass before running the Hardhat integration test.
 import json
 import sys
 import os
+import shutil
 
 # Allow running from tee-worker/ root or from scripts/ subdir
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -28,6 +29,7 @@ from enclave.attestation import generate_attestation_report, verify_attestation_
 from oracle.aggregator import get_median_price
 from agent.strategy import make_trading_decision, build_updated_memory
 from payload.builder import build_strategy_data, build_final_payload
+from storage.og_storage_client import store_to_0g_storage, fetch_from_0g_storage
 
 # ── Config ────────────────────────────────────────────────────────────────────
 VAULT_ADDRESS = os.getenv("POLICY_VAULT_ADDRESS", "0x" + "ab" * 20)
@@ -43,7 +45,7 @@ errors = []
 warnings = []
 
 # ── Test 1: Key generation ────────────────────────────────────────────────────
-print("\n[1/7] Key generation...")
+print("\n[1/8] Key generation...")
 keypair = None
 try:
     keypair = generate_ecdsa_keypair(tee_identity=TEE_IDENTITY)
@@ -59,7 +61,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 2: AES key sealing ────────────────────────────────────────────────────
-print("\n[2/7] AES key sealing...")
+print("\n[2/8] AES key sealing...")
 aes_key = None
 try:
     aes_key = generate_aes_key(TEE_IDENTITY)
@@ -74,21 +76,20 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 3: Oracle aggregation ─────────────────────────────────────────────────
-print("\n[3/7] Oracle aggregation...")
+print("\n[3/8] Oracle aggregation...")
 median = None
 prices = None
 try:
     median, prices = get_median_price("ETH")
     assert isinstance(median, float) and median > 0
-    assert all(k in prices for k in ("pyth", "chainlink", "twap"))
-    print(f"  [PASS] Median: ${median:,.2f} | Pyth: ${prices['pyth']:,.2f} | "
-          f"CL: ${prices['chainlink']:,.2f} | TWAP: ${prices['twap']:,.2f}")
+    assert all(k in prices for k in ("pyth", "chainlink", "twap", "onchain"))
+    print(f"  [PASS] Median: ${median:,.2f} | oracles found: {list(prices.keys())}")
 except Exception as e:
     errors.append(f"Oracle: {e}")
     print(f"  [FAIL] {e}")
 
 # ── Test 4: Trading decision ───────────────────────────────────────────────────
-print("\n[4/7] Trading decision...")
+print("\n[4/8] Trading decision...")
 decision = None
 try:
     decision = make_trading_decision(median, None, TOKEN_ID)
@@ -101,7 +102,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 5: Payload construction & signing ────────────────────────────────────
-print("\n[5/7] Payload construction & signing...")
+print("\n[5/8] Payload construction & signing...")
 payload = None
 try:
     if keypair is None or decision is None:
@@ -158,7 +159,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 6: Memory encrypt/decrypt roundtrip ──────────────────────────────────
-print("\n[6/7] Memory encrypt/decrypt roundtrip...")
+print("\n[6/8] Memory encrypt/decrypt roundtrip...")
 try:
     if aes_key is None or decision is None or median is None:
         raise RuntimeError("Skipping: prior test failed, required variables missing")
@@ -179,14 +180,14 @@ try:
         errors.append("Tamper test FAILED: should have raised InvalidTag")
         print("  [FAIL] Tamper test FAILED (no exception raised!)")
     except Exception:
-        print("  [PASS] Tamper detection (AES-GCM InvalidTag): OK")
+        print(f"  [PASS] Tamper detection (AES-GCM InvalidTag): OK")
 
 except Exception as e:
     errors.append(f"Memory crypto: {e}")
     print(f"  [FAIL] {e}")
 
-# ── Test 7: Attestation ───────────────────────────────────────────────────────
-print("\n[7/7] Attestation report...")
+# ── Test 7: Attestation report ───────────────────────────────────────────────────────
+print("\n[7/8] Attestation report...")
 try:
     if keypair is None:
         raise RuntimeError("Skipping: keypair not available (Test 1 failed)")
@@ -202,10 +203,35 @@ except Exception as e:
     errors.append(f"Attestation: {e}")
     print(f"  [FAIL] {e}")
 
+# ── Test 8: 0G Storage roundtrip ──────────────────────────────────────────────
+print("\n[8/8] 0G Storage roundtrip...")
+try:
+    test_token_id = 9999
+    test_blob = {"test": "storage", "phase": 3}
+    
+    # Test Store (local fallback expected if no node)
+    root_hash = store_to_0g_storage(test_token_id, test_blob)
+    assert root_hash, "Store must return a hash"
+    
+    # Test Fetch
+    fetched = fetch_from_0g_storage(test_token_id)
+    assert fetched == test_blob, "Fetched blob must match stored blob"
+    
+    # Cleanup
+    if os.path.exists(f".latest_root_hash_{test_token_id}"):
+        os.remove(f".latest_root_hash_{test_token_id}")
+    if os.path.exists(f".mock_storage_{root_hash}.json"):
+        os.remove(f".mock_storage_{root_hash}.json")
+        
+    print("  [PASS] Store/Fetch roundtrip: OK")
+except Exception as e:
+    errors.append(f"Storage: {e}")
+    print(f"  [FAIL] {e}")
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 print("\n" + "="*60)
 if not errors:
-    print("  ALL CHECKS PASSED -- Phase 2 ready for Hardhat integration test")
+    print("  ALL 8 CHECKS PASSED -- Phase 2 ready for Hardhat integration test")
     print("="*60 + "\n")
     sys.exit(0)
 else:

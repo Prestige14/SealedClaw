@@ -25,6 +25,10 @@ python-dotenv>=1.0.0
 
 # HTTP requests for external Oracle and Storage APIs
 requests>=2.31.0
+httpx>=0.25.0
+
+# Testing
+pytest>=7.4.0
 
 # Web3 for Chainlink RPC interactions
 web3>=6.10.0

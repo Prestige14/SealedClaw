@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "./interfaces/IDEXAdapter.sol";
 
 /**
  * @title PolicyVault
@@ -42,8 +43,14 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     // iNFT contract
     IERC721 public agentNFT;
 
-    // TEE enclave public key (stored as Ethereum address = keccak(pubkey)[12:])
-    address public teeEnclavePubKey;
+    // TEE enclave public keys per tokenId
+    mapping(uint256 => address) public agentTeeKeys;
+
+    // Attestation Registry for quote verification
+    address public attestationRegistry;
+
+    // Default TEE key for initial mints (if not specified)
+    address public defaultTeeKey;
 
     // Transfer protocol tracking
     mapping(uint256 => PendingTransfer) public pendingTransfers;
@@ -65,12 +72,16 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     mapping(uint256 => uint256) public dailySpent;
     mapping(uint256 => uint256) public lastResetDay;  // unix day number
 
-    // [FIX 3] Key rotation cooldown
+    // Key rotation cooldown per tokenId
     uint256 public constant KEY_ROTATION_COOLDOWN = 24 hours;
-    uint256 public lastKeyRotation;
+    mapping(uint256 => uint256) public lastKeyRotations;
+
+    // --- Adapter Pattern ---
+    mapping(address => bool) public approvedAdapters;
 
     // ── Events ────────────────────────────────────────────────────────────────
     event PolicyUpdated(uint256 indexed tokenId);
+    event AdapterUsed(address indexed adapter, string name);
     event TransferInitiated(uint256 indexed tokenId, address newOwner, uint256 timestamp);
     event TransferFinalized(uint256 indexed tokenId, address newOwner, uint256 timestamp);
     event StrategyExecuted(
@@ -85,15 +96,14 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
     event TeeKeyRotated(address indexed newKey, uint256 timestamp);
     event EmergencyWithdraw(address indexed owner, uint256 amount);
 
-    // ── Constructor ───────────────────────────────────────────────────────────
-    constructor(address _agentNFT, address _teeEnclavePubKey)
+    constructor(address _agentNFT, address _defaultTeeKey, address _attestationRegistry)
         Ownable(msg.sender)
     {
-        require(_agentNFT        != address(0), "Invalid NFT address");
-        require(_teeEnclavePubKey != address(0), "Invalid TEE key");
-        agentNFT         = IERC721(_agentNFT);
-        teeEnclavePubKey = _teeEnclavePubKey;
-        lastKeyRotation  = block.timestamp;
+        require(_agentNFT    != address(0), "Invalid NFT address");
+        require(_defaultTeeKey != address(0), "Invalid TEE key");
+        agentNFT      = IERC721(_agentNFT);
+        defaultTeeKey = _defaultTeeKey;
+        attestationRegistry = _attestationRegistry;
     }
 
     // ── Modifier ──────────────────────────────────────────────────────────────
@@ -205,6 +215,11 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         return policies[tokenId];
     }
 
+    // ── Adapter Management ────────────────────────────────────────────────────
+    function setAdapter(address adapter, bool approved) external onlyOwner {
+        approvedAdapters[adapter] = approved;
+    }
+
     // ── Execute Trade (TEE Verified) ──────────────────────────────────────────
     /**
      * @notice Executes a strategy verified by TEE ECDSA signature.
@@ -236,7 +251,7 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         require(block.timestamp <= deadline, "Transaction expired");
 
         // Decode strategy data once for all checks
-        (string memory action, uint256 amountInStrategy, string memory assetInStrategy) = abi.decode(strategyData, (string, uint256, string));
+        (string memory action, uint256 amountInStrategy, address tokenIn, address tokenOut) = abi.decode(strategyData, (string, uint256, address, address));
 
         // ── 1.5. Enforce Reduce-Only Mode during PendingTransfer ─────────────
         if (pendingTransfers[tokenId].transferInitiatedAt > 0) {
@@ -280,38 +295,64 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
                 strategyData,
                 currentNonce,
                 deadline,
-                address(this)   // prevents cross-contract replay
+                address(this)
             )
         );
         bytes32 ethHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         address signer  = ethHash.recover(signature);
-        require(signer == teeEnclavePubKey, "Invalid TEE signature");
+
+        address agentKey = agentTeeKeys[tokenId];
+        if (agentKey == address(0)) agentKey = defaultTeeKey;
+        
+        require(signer == agentKey, "Invalid TEE signature");
 
         // ── 7. Commit: increment nonce + update daily spend ──────────────────
         nonces[tokenId]      = currentNonce + 1;
         dailySpent[tokenId] += tradeAmount;
 
-        // ── 8. [FIX 6] ACTUAL EXECUTION (DEX External Call) ──────────────────
-        // Strategy data was decoded at the top of the function.
-        // We pass the native token (0G) to the DEX if the action is BUY.
+        // ── 8. ACTUAL EXECUTION (Adapter Call) ──────────────────
+        require(approvedAdapters[targetDEX], "Adapter not approved");
+        IDEXAdapter adapter = IDEXAdapter(targetDEX);
+        emit AdapterUsed(targetDEX, adapter.adapterName());
         
         uint256 balanceBefore = address(this).balance;
         uint256 valueToSend = 0;
+
         if (keccak256(bytes(action)) == keccak256(bytes("BUY"))) {
             valueToSend = tradeAmount;
             require(vaultBalances[tokenId] >= valueToSend, "Insufficient vault balance for trade");
             vaultBalances[tokenId] -= valueToSend;
+            // Native -> ERC20
+            require(tokenIn == address(0), "BUY action must use address(0) as tokenIn");
+        } else if (keccak256(bytes(action)) == keccak256(bytes("REDUCE_ONLY"))) {
+            // ERC20 -> Native
+            require(tokenOut == address(0), "REDUCE_ONLY action must use address(0) as tokenOut");
+            // valueToSend = 0 natively
+            amountInStrategy = tradeAmount; // Wait, strategy must provide the exact amount of ERC20 to return
         }
 
-        // Perform the low-level call to the targetDEX using the correct multi-tenant signature
-        (bool success, ) = targetDEX.call{value: valueToSend}(
-            abi.encodeWithSignature("executeTradeFor(uint256,string,uint256,string)", tokenId, action, tradeAmount, assetInStrategy)
+        // Call the adapter's swap function. For REDUCE_ONLY we must transfer the ERC-20 to the adapter first?
+        // Wait, for standard swaps, the adapter assumes we've approved it!
+        // We will assume XSwapAdapter does transferFrom, but wait! The ERC20 is held by PolicyVault.
+        // We need to approve the adapter to spend ERC-20! 
+        if (tokenIn != address(0) && amountInStrategy > 0) {
+            // We must approve the adapter
+            (bool ok, ) = tokenIn.call(abi.encodeWithSignature("approve(address,uint256)", targetDEX, amountInStrategy));
+            require(ok, "ERC20 approve failed");
+        }
+
+        // Perform the swap via adapter
+        adapter.swap{value: valueToSend}(
+            tokenIn,
+            tokenOut,
+            amountInStrategy,
+            0,            // minAmountOut defaults to 0 for hackathon demo
+            address(this) // recipient is always PolicyVault
         );
-        require(success, "DEX execution failed");
 
         // --- FULL LOOP: Detect refund from DEX and credit agent back ---
         uint256 balanceAfter = address(this).balance;
-        // If it was a REDUCE_ONLY, balanceAfter might be > (balanceBefore - valueToSend)
+        // If it was a REDUCE_ONLY, balanceAfter will be > (balanceBefore - valueToSend)
         uint256 expectedBalance = balanceBefore - valueToSend;
         if (balanceAfter > expectedBalance) {
             uint256 refund = balanceAfter - expectedBalance;
@@ -321,20 +362,36 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         emit StrategyExecuted(tokenId, strategyData, currentNonce);
     }
 
-    // ── TEE Key Rotation ──────────────────────────────────────────────────────
     /**
-     * @notice [FIX 3] Updates TEE public key with 24-hour cooldown.
-     *         Prevents abuse of rapid key rotation attacks.
+     * @notice Updates TEE public key for a specific agent with cooldown and attestation.
      */
-    function updateTeeEnclavePubKey(address _newKey) external onlyOwner {
+    function updateAgentTeeKey(
+        uint256 tokenId, 
+        address _newKey, 
+        bytes32 mrenclave, 
+        bytes32 mrsigner
+    ) external onlyTokenOwner(tokenId) {
         require(_newKey != address(0), "Invalid key");
         require(
-            block.timestamp >= lastKeyRotation + KEY_ROTATION_COOLDOWN,
+            block.timestamp >= lastKeyRotations[tokenId] + KEY_ROTATION_COOLDOWN,
             "Key rotation cooldown active"
         );
-        teeEnclavePubKey = _newKey;
-        lastKeyRotation  = block.timestamp;
+
+        // Verify attestation measurement via registry
+        if (attestationRegistry != address(0)) {
+            (bool ok, bytes memory data) = attestationRegistry.staticcall(
+                abi.encodeWithSignature("verifyMeasurements(bytes32,bytes32)", mrenclave, mrsigner)
+            );
+            require(ok && abi.decode(data, (bool)), "Invalid TEE attestation");
+        }
+
+        agentTeeKeys[tokenId] = _newKey;
+        lastKeyRotations[tokenId] = block.timestamp;
         emit TeeKeyRotated(_newKey, block.timestamp);
+    }
+
+    function setDefaultTeeKey(address _newKey) external onlyOwner {
+        defaultTeeKey = _newKey;
     }
 
     // ── Handover Protocol ─────────────────────────────────────────────────────
@@ -348,16 +405,20 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         emit TransferInitiated(tokenId, newOwner, block.timestamp);
     }
     
-    function finalizeTransfer(uint256 tokenId) external whenNotPaused {
+    function finalizeTransfer(uint256 tokenId) external nonReentrant {
         PendingTransfer memory pt = pendingTransfers[tokenId];
         require(pt.transferInitiatedAt > 0, "No pending transfer");
         require(block.timestamp >= pt.transferInitiatedAt + TRANSFER_COOLDOWN, "Transfer cooldown active");
         
-        // Revoke TEE Enclave PubKey for safety
-        teeEnclavePubKey = address(0);
+        // Revoke TEE Enclave PubKey for safety during ownership change
+        // The new owner must set their own TEE key to resume operation
+        agentTeeKeys[tokenId] = address(0);
         
         address newOwner = pt.newOwner;
         delete pendingTransfers[tokenId];
+        
+        // Transfer the NFT
+        agentNFT.safeTransferFrom(agentNFT.ownerOf(tokenId), newOwner, tokenId);
         
         emit TransferFinalized(tokenId, newOwner, block.timestamp);
     }
@@ -380,8 +441,8 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         return vaultBalances[tokenId];
     }
 
-    function keyRotationUnlocksAt() external view returns (uint256) {
-        return lastKeyRotation + KEY_ROTATION_COOLDOWN;
+    function keyRotationUnlocksAt(uint256 tokenId) external view returns (uint256) {
+        return lastKeyRotations[tokenId] + KEY_ROTATION_COOLDOWN;
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────────

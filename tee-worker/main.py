@@ -217,9 +217,9 @@ def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | Non
     )
 
     print(
-        f"[AI AGENT] Decision   : {decision['action']}\n"
+        f"[AI AGENT] Action     : {decision['action']}\n"
         f"[AI AGENT] Amount     : {decision['amount_wei']} wei\n"
-        f"[AI AGENT] Asset      : {decision['asset']}\n"
+        f"[AI AGENT] Target Out : {decision.get('token_out')}\n"
         f"[AI AGENT] Rationale  : {decision['rationale']}"
     )
 
@@ -262,11 +262,14 @@ def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | Non
     )
 
     if is_pending_transfer and new_owner:
-        print(f"[MEMORY] Re-encrypting memory for handover to new owner {new_owner}...")
+        print(f"[MEMORY] HANDOVER DETECTED: Re-encrypting memory for new owner {new_owner}...")
+        # In production: The new owner must provide their encryption public key.
+        # This allows the buyer to decrypt the secret memory after the handover delay.
         encrypted_blob: dict = re_encrypt_for_handover(updated_memory, new_owner)
     else:
-        print("[MEMORY] Encrypting memory state for 0G Storage...")
-        # TEE BOUNDARY: encryption happens inside enclave before data exits
+        print("[MEMORY] Encrypting sovereign memory state for 0G Storage...")
+        # TEE BOUNDARY: encryption happens inside enclave before data exits.
+        # Uses the AES-256-GCM key derived from the TEE's private identity.
         encrypted_blob: dict = encrypt_memory(updated_memory, aes_key)
 
     print(
@@ -275,7 +278,7 @@ def run_tee_worker_cycle(is_pending_transfer: bool = False, new_owner: str | Non
         f"         nonce_gcm  : {encrypted_blob['nonce_gcm']}\n"
         f"         tag        : {encrypted_blob['tag']}"
     )
-    print("\n--- Upload encrypted blob to 0G Storage ---")
+    print("\n--- Uploading sovereign encrypted blob to 0G Storage node ---")
     store_to_0g_storage(token_id, encrypted_blob)
 
     # ── Verify round-trip decrypt (sanity check) ──────────────────────────────

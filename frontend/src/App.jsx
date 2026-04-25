@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Wallet, ShieldCheck, Gamepad2, Settings } from 'lucide-react';
 import MintPage from './pages/MintPage';
 import DashboardPage from './pages/DashboardPage';
+import MarketplacePage from './pages/MarketplacePage';
+import { ShoppingBag } from 'lucide-react';
 
 // ── CONFIGURATION ─────────────────────────────────────────────────────────────
 const GALILEO_CHAIN_ID = '0x40da'; // 16602
 
 function App() {
   const [account, setAccount] = useState('');
-  const [currentPage, setCurrentPage] = useState('mint'); // 'mint' or 'dashboard'
+  const [currentPage, setCurrentPage] = useState('mint'); // 'mint', 'dashboard', or 'marketplace'
 
   // ── Wallet connect ────────────────────────────────────────────────────────
   const connectWallet = async () => {
@@ -92,6 +94,16 @@ function App() {
               >
                 <Settings size={16} /> Dashboard
               </button>
+              <button
+                onClick={() => setCurrentPage('marketplace')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
+                  currentPage === 'marketplace' 
+                    ? 'bg-amber-500/20 text-amber-300' 
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <ShoppingBag size={16} /> Forge
+              </button>
             </div>
 
             {/* Connect Wallet */}
@@ -113,6 +125,7 @@ function App() {
       <div className="pt-24 pb-10">
         {currentPage === 'mint' && <MintPage account={account} onNavigate={setCurrentPage} />}
         {currentPage === 'dashboard' && <DashboardPage account={account} />}
+        {currentPage === 'marketplace' && <MarketplacePage account={account} />}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ Rather than relying purely on centralized servers or unverified bot scripts, Sea
 3. The TEE worker processes the strategy within a secure enclave, interacting with real-time on-chain data and producing an ECDSA signature over the payload.
 4. The strategy payload is cached to 0G Storage for persistent cross-cycle memory.
 5. A smart contract (`PolicyVault`) deployed on the 0G Galileo testnet validates the TEE's signature before allowing execution on a target DEX.
+6. **Command Center Dashboard**: A premium React-based management interface for monitoring agents and trading assets on the "Forge" marketplace.
 
 ---
 
@@ -45,6 +46,7 @@ flowchart TD
 - **0G Infrastructure Layer**: 
    - 0G EVM Galileo confirms the cryptographic signature matching the authorized TEE public key.
    - 0G Storage acts as the decentralized memory cache so the agent can remember past trading contexts.
+- **Frontend Layer**: A Vite-powered React application that provides real-time visualization of oracle data, risk management controls, and the agent marketplace.
 
 ---
 
@@ -118,6 +120,16 @@ python orchestrator.py
 
 # Option B: Run via interactive Telegram Bot
 python telegram_bot.py
+
+### Step 4: Launch Frontend
+Enter the frontend directory and start the development server.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Explore the dashboard at `http://localhost:5173`.
 ```
 
 ---

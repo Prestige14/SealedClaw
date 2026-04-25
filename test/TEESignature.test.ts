@@ -27,14 +27,15 @@ import * as path from "path";
  *   Python builder._MOCK_DEX_ADDRESS = "0x000000000000000000000000000000000000dEaD"
  */
 
-// Must match payload/builder.py _MOCK_DEX_ADDRESS exactly
-const MOCK_DEX = "0x000000000000000000000000000000000000dEaD";
+// We no longer use a generic dead address for testing because adapter.swap() expects return data.
+// We will deploy a real MockDEXAdapter in the test and pass it.
+let MOCK_DEX: string;
 
 const TEE_WORKER_DIR = path.join(__dirname, "..", "tee-worker");
 const OUT_FILE = path.join(TEE_WORKER_DIR, "test_output.json");
 
 /** Helper: run Python tee-worker and return parsed payload */
-function runPythonWorker(vaultAddress: string): any {
+function runPythonWorker(vaultAddress: string, dexAddress: string): any {
     execSync(
         `python main.py --output "${OUT_FILE}" --vault ${vaultAddress} --token-id 0 --nonce 0`,
         {
@@ -44,7 +45,7 @@ function runPythonWorker(vaultAddress: string): any {
                 POLICY_VAULT_ADDRESS: vaultAddress,
                 TOKEN_ID: "0",
                 CURRENT_NONCE: "0",
-                TARGET_DEX_ADDRESS: MOCK_DEX,
+                TARGET_DEX_ADDRESS: dexAddress,
             },
             stdio: "pipe",
         }
@@ -82,11 +83,17 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         const tempVaultAddress = await tempVault.getAddress();
         console.log(`\n  [Step 1] Temp vault deployed: ${tempVaultAddress}`);
 
+        // ── Deploy MockDEXAdapter ──────────────────────────
+        const MockDEXAdapter = await ethers.getContractFactory("MockDEXAdapter");
+        const dexAdapter = await MockDEXAdapter.deploy();
+        await dexAdapter.waitForDeployment();
+        MOCK_DEX = await dexAdapter.getAddress();
+
         // ── Step 3: Run Python ONCE to get the TEE pub key ────────────────────
         // Use temp vault address just to get the TEE pub key (the key itself
         // doesn't depend on vault address; only the signature does)
         console.log("  [Step 2] Running Python to discover TEE pub key...");
-        const tempPayload = runPythonWorker(tempVaultAddress);
+        const tempPayload = runPythonWorker(tempVaultAddress, MOCK_DEX);
         const teePubKey: string = tempPayload.tee_pub_key;
         console.log(`  [Step 2] TEE pub key: ${teePubKey}`);
 
@@ -101,6 +108,9 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         await vault.waitForDeployment();
         vaultAddress = await vault.getAddress();
         console.log(`  [Step 3] Final vault deployed: ${vaultAddress}`);
+
+        // Set adapter approved
+        await vault.setAdapter(MOCK_DEX, true);
 
         // Confirm vault has the correct TEE key
         const storedKey = await vault.teeEnclavePubKey();
@@ -133,7 +143,7 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         // This is the critical run — the signature now includes the correct
         // vault address in the hash.
         console.log(`  [Step 7] Running Python tee-worker with final vault address...`);
-        pythonPayload = runPythonWorker(vaultAddress);
+        pythonPayload = runPythonWorker(vaultAddress, MOCK_DEX);
 
         console.log(`  [Step 7] TEE pub key : ${pythonPayload.tee_pub_key}`);
         console.log(`  [Step 7] Target DEX  : ${pythonPayload.targetDEX}`);

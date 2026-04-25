@@ -2,70 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap');
+
 :root {
+  --color-primary: #3b82f6;
+  --color-secondary: #14b8a6;
+  --color-accent: #8b5cf6;
+  --color-bg: #0a0a0c;
+  --color-surface: #121216;
+  --color-border: rgba(255, 255, 255, 0.08);
+  font-family: 'Outfit', sans-serif;
   color-scheme: dark;
 }
 
 body {
-  @apply bg-background text-gray-100 antialiased;
-  background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0a0a0c 100%);
+  @apply text-gray-100 antialiased;
+  background-color: var(--color-bg);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
   min-height: 100vh;
 }
 
+/* Scrollbar Style */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
 .glass-card {
-  @apply bg-surface/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl transition-all duration-300;
+  @apply bg-surface/60 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-2xl transition-all duration-500;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.03),
+    transparent
+  );
+  transition: 0.5s;
+}
+
+.glass-card:hover::before {
+  left: 100%;
 }
 
 .glass-card:hover {
-  @apply border-white/20 -translate-y-1;
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
+  @apply border-white/20;
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.1);
 }
 
-.btn-primary {
-  @apply px-6 py-3 bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-500 hover:to-teal-400 
-         text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50;
+.glow-btn {
+  @apply relative overflow-hidden px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-sm transition-all duration-300 active:scale-95;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
-.btn-danger {
-  @apply px-6 py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-500 hover:to-orange-400 
-         text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50;
+.glow-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  transition: 0.3s;
 }
 
-.input-field {
-  @apply w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:outline-none focus:border-blue-500/50 transition-colors;
+.glow-btn:hover::after {
+  opacity: 0.1;
 }
 
-/* Custom glow effect */
-.glow-text {
-  text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+.glow-btn:hover {
+  box-shadow: 0 0 25px rgba(59, 130, 246, 0.5);
+  transform: translateY(-2px);
 }
 
-.animate-float {
-  animation: float 6s ease-in-out infinite;
+.input-glow {
+  @apply bg-black/40 border border-white/10 rounded-2xl p-4 text-white font-mono focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all;
 }
 
-@keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
+.status-badge {
+  @apply px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0px); }
+.badge-active {
+  @apply bg-green-500/10 text-green-400 border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)];
 }
 
-@keyframes pulse-glow {
-  0% { box-shadow: 0 0 5px rgba(139, 92, 246, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.4); }
-  100% { box-shadow: 0 0 5px rgba(139, 92, 246, 0.2); }
+.badge-pending {
+  @apply bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)];
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.5s ease forwards;
+/* Animations */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 3s infinite;
+.animate-shimmer {
+  animation: shimmer 2s infinite;
 }
 
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-slow-spin {
+  animation: slow-spin 20s linear infinite;
+}

@@ -73,7 +73,7 @@ def make_trading_decision(
         Natural language string from user's Telegram message.
     """
     params = _load_strategy_params()
-    asset: str = "ETH"
+    mock_erc20 = "0x1111111111111111111111111111111111111111"
 
     # Extract state from memory if available
     last_price: float = 0.0
@@ -136,10 +136,17 @@ def make_trading_decision(
         user_intent=intent
     )
 
+    token_in = "0x0000000000000000000000000000000000000000"
+    token_out = mock_erc20
+    if action == ACTION_REDUCE_ONLY:
+        token_in = mock_erc20
+        token_out = "0x0000000000000000000000000000000000000000"
+
     return {
         "action": action,
         "amount_wei": final_amount_wei,
-        "asset": asset,
+        "token_in": token_in,
+        "token_out": token_out,
         "rationale": ai_rationale,
         "current_price": median_price,
         "price_change_pct": round(price_change_pct, 4),
