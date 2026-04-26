@@ -1,78 +1,127 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Globe, Info } from 'lucide-react';
+import React from 'react';
+import { Globe, RefreshCw, AlertTriangle, ShieldCheck, Clock } from 'lucide-react';
+import { useOraclePrice } from '../hooks/useOraclePrice';
 
 const OraclePriceFeed = ({ asset = "ETH" }) => {
-  const [prices, setPrices] = useState({
-    pyth: 3140.25,
-    chainlink: 3142.10,
-    twap: 3139.80,
-    onchain: 3141.50
-  });
-  const [loading, setLoading] = useState(false);
+  const pair = `${asset}/USD`;
+  const { data, isLoading, isError, error, refetch, failureCount } = useOraclePrice(pair);
 
-  // Mock auto-update for demo
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPrices(prev => ({
-        pyth: prev.pyth + (Math.random() - 0.5) * 2,
-        chainlink: prev.chainlink + (Math.random() - 0.5) * 1.5,
-        twap: prev.twap + (Math.random() - 0.5) * 0.5,
-        onchain: prev.onchain + (Math.random() - 0.5) * 1.2
-      }));
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const isOffline = failureCount >= 3;
 
-  const median = Object.values(prices).sort((a, b) => a - b)[1];
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Never';
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - timestamp;
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    return `${Math.floor(diff / 3600)}h ago`;
+  };
+
+  if (isLoading && !data) {
+    return (
+      <div className="glass-card p-6 border-blue-500/10 animate-pulse">
+        <div className="h-6 w-32 bg-white/5 rounded mb-6"></div>
+        <div className="grid grid-cols-2 gap-4">
+          {[1, 2].map(i => <div key={i} className="h-20 bg-white/5 rounded-2xl"></div>)}
+        </div>
+      </div>
+    );
+  }
+
+  const status = isOffline ? 'OFFLINE' : (data?.status || 'LOADING').toUpperCase();
+  const price = data?.price || '0.00';
+  const updatedAt = data?.updatedAt;
 
   return (
-    <div className="glass-card p-6 border-blue-500/10">
+    <div className={`glass-card p-6 border-blue-500/10 transition-all ${isOffline ? 'opacity-70 grayscale' : ''}`}>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500/10 rounded-lg">
             <Globe size={20} className="text-blue-400" />
           </div>
-          <h3 className="text-lg font-bold">Multi-Oracle Feed</h3>
+          <h3 className="text-lg font-bold">Chainlink Oracle</h3>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
-          <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Live Sync</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {[
-          { name: 'Pyth Network', val: prices.pyth, icon: '🔥' },
-          { name: 'Chainlink', val: prices.chainlink, icon: '🔗' },
-          { name: 'On-Chain CL', val: prices.onchain, icon: '⛓️' },
-          { name: '0G TWAP', val: prices.twap, icon: '⏳' },
-        ].map(source => (
-          <div key={source.name} className="p-4 bg-black/40 rounded-2xl border border-white/5 group hover:border-blue-500/20 transition-all">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs">{source.icon}</span>
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{source.name}</span>
+        
+        <div className="flex items-center gap-2">
+          {isOffline ? (
+            <button 
+              onClick={() => refetch()}
+              className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 hover:bg-red-500/20 transition-colors"
+            >
+              <RefreshCw size={12} className="animate-spin-once" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Retry Connection</span>
+            </button>
+          ) : (
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${
+              status === 'LIVE' ? 'bg-green-500/10 border-green-500/20 text-green-400' : 
+              status === 'STALE' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' :
+              status === 'UNCONFIGURED' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+              'bg-white/5 border-white/10 text-gray-400'
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                status === 'LIVE' ? 'bg-green-400 animate-pulse' : 
+                status === 'STALE' ? 'bg-yellow-400' : 
+                status === 'UNCONFIGURED' ? 'bg-blue-400' :
+                'bg-gray-400'
+              }`}></div>
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                {isError ? 'CACHED' : status}
+              </span>
             </div>
-            <p className="text-white font-mono font-bold tracking-tight">
-              ${source.val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </div>
-        ))}
+          )}
+        </div>
       </div>
 
-      <div className="mt-6 p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
-        <div className="flex justify-between items-center">
-          <div>
-            <p className="text-[10px] text-blue-300 font-bold uppercase tracking-[0.2em] mb-1">Effective Aggregated Price</p>
-            <p className="text-2xl font-black text-white italic tracking-tighter">
-              ${median.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+      <div className="grid grid-cols-1 gap-4">
+        <div className="p-5 bg-black/40 rounded-2xl border border-white/5 group hover:border-blue-500/20 transition-all">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs">🔗</span>
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{pair} Feed</span>
+            </div>
+            {status === 'LIVE' && <ShieldCheck size={14} className="text-blue-400" />}
           </div>
-          <div className="text-right">
-            <p className="text-xs font-bold text-blue-400">0.05% Dev.</p>
-            <p className="text-[10px] text-gray-500 uppercase font-bold">Safe for Trade</p>
+          <div className="flex items-end justify-between">
+            <p className="text-3xl font-mono font-black text-white tracking-tighter">
+              {status === 'UNCONFIGURED' ? 'N/A' : `$${parseFloat(price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </p>
+            <div className="text-right">
+               <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold uppercase">
+                  <Clock size={10} />
+                  <span>Last update</span>
+               </div>
+               <p className="text-xs text-gray-400 font-mono">{status === 'UNCONFIGURED' ? '—' : getTimeAgo(updatedAt)}</p>
+            </div>
           </div>
         </div>
       </div>
+
+      {isError && !isOffline && (
+        <div className="mt-4 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3">
+          <AlertTriangle size={16} className="text-red-400 shrink-0" />
+          <p className="text-[10px] text-red-400/80 font-medium">
+            RPC connection unstable. Showing last known price from cache.
+          </p>
+        </div>
+      )}
+
+      {!isError && status === 'STALE' && (
+        <div className="mt-4 p-3 bg-yellow-500/5 border border-yellow-500/10 rounded-xl flex items-center gap-3">
+          <Clock size={16} className="text-yellow-400 shrink-0" />
+          <p className="text-[10px] text-yellow-400/80 font-medium">
+            Price hasn't updated on-chain for over an hour.
+          </p>
+        </div>
+      )}
+
+      {status === 'UNCONFIGURED' && (
+        <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl flex items-center gap-3">
+          <Globe size={16} className="text-blue-400 shrink-0" />
+          <p className="text-[10px] text-blue-400/80 font-medium">
+            This price feed is not yet configured on the 0G Galileo Testnet.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

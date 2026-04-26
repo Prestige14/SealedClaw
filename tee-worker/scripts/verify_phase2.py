@@ -7,7 +7,7 @@ No Hardhat required -- checks Python-side consistency only.
 Run from tee-worker/ directory:
     python scripts/verify_phase2.py
 
-All 7 tests must pass before running the Hardhat integration test.
+All 10 tests must pass before running the Hardhat integration test.
 """
 
 import json
@@ -45,7 +45,7 @@ errors = []
 warnings = []
 
 # ── Test 1: Key generation ────────────────────────────────────────────────────
-print("\n[1/8] Key generation...")
+print("\n[1/10] Key generation...")
 keypair = None
 try:
     keypair = generate_ecdsa_keypair(tee_identity=TEE_IDENTITY)
@@ -60,8 +60,38 @@ except Exception as e:
     errors.append(f"Key generation: {e}")
     print(f"  [FAIL] {e}")
 
+# ── NEW: Environment Checks (9-10) ────────────────────────────────────────────
+
+print("\n[9/10] Environment variables check...")
+env_exists = os.path.exists(".env")
+if not env_exists:
+    print("  [SKIP] No .env file found. Skipping required variables check.")
+else:
+    try:
+        from main import validate_environment
+        validate_environment()
+        print("  [PASS] All required environment variables are set.")
+    except Exception as e:
+        errors.append(f"Environment: {e}")
+        print(f"  [FAIL] {e}")
+
+print("\n[10/10] Address format check...")
+if not env_exists:
+    print("  [SKIP] No .env file found. Skipping address format check.")
+else:
+    try:
+        address_vars = ["POLICY_VAULT_ADDRESS", "AGENT_NFT_ADDRESS", "MARKETPLACE_ADDRESS"]
+        for var in address_vars:
+            val = os.getenv(var)
+            if val:
+                assert val.startswith("0x") and len(val) == 42, f"Invalid format for {var}"
+        print("  [PASS] All contract addresses in .env have valid formats.")
+    except Exception as e:
+        errors.append(f"Address Format: {e}")
+        print(f"  [FAIL] {e}")
+
 # ── Test 2: AES key sealing ────────────────────────────────────────────────────
-print("\n[2/8] AES key sealing...")
+print("\n[2/10] AES key sealing...")
 aes_key = None
 try:
     aes_key = generate_aes_key(TEE_IDENTITY)
@@ -76,7 +106,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 3: Oracle aggregation ─────────────────────────────────────────────────
-print("\n[3/8] Oracle aggregation...")
+print("\n[3/10] Oracle aggregation...")
 median = None
 prices = None
 try:
@@ -89,7 +119,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 4: Trading decision ───────────────────────────────────────────────────
-print("\n[4/8] Trading decision...")
+print("\n[4/10] Trading decision...")
 decision = None
 try:
     decision = make_trading_decision(median, None, TOKEN_ID)
@@ -102,7 +132,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 5: Payload construction & signing ────────────────────────────────────
-print("\n[5/8] Payload construction & signing...")
+print("\n[5/10] Payload construction & signing...")
 payload = None
 try:
     if keypair is None or decision is None:
@@ -159,7 +189,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 6: Memory encrypt/decrypt roundtrip ──────────────────────────────────
-print("\n[6/8] Memory encrypt/decrypt roundtrip...")
+print("\n[6/10] Memory encrypt/decrypt roundtrip...")
 try:
     if aes_key is None or decision is None or median is None:
         raise RuntimeError("Skipping: prior test failed, required variables missing")
@@ -187,7 +217,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 7: Attestation report ───────────────────────────────────────────────────────
-print("\n[7/8] Attestation report...")
+print("\n[7/10] Attestation report...")
 try:
     if keypair is None:
         raise RuntimeError("Skipping: keypair not available (Test 1 failed)")
@@ -204,7 +234,7 @@ except Exception as e:
     print(f"  [FAIL] {e}")
 
 # ── Test 8: 0G Storage roundtrip ──────────────────────────────────────────────
-print("\n[8/8] 0G Storage roundtrip...")
+print("\n[8/10] 0G Storage roundtrip...")
 try:
     test_token_id = 9999
     test_blob = {"test": "storage", "phase": 3}
@@ -231,7 +261,7 @@ except Exception as e:
 # ── Summary ───────────────────────────────────────────────────────────────────
 print("\n" + "="*60)
 if not errors:
-    print("  ALL 8 CHECKS PASSED -- Phase 2 ready for Hardhat integration test")
+    print("  ALL 10 CHECKS PASSED -- Phase 2 ready for Hardhat integration test")
     print("="*60 + "\n")
     sys.exit(0)
 else:

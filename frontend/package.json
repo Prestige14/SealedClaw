@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.100.5",
     "autoprefixer": "^10.5.0",
     "ethers": "^6.16.0",
     "lucide-react": "^1.8.0",

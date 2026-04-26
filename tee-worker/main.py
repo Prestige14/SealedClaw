@@ -74,6 +74,52 @@ def _hr() -> None:
     print("-" * 60)
 
 
+def validate_environment():
+    """
+    Validasi semua env vars yang diperlukan sudah di-set.
+    Fail fast dengan pesan error yang jelas.
+    """
+    required = [
+        "POLICY_VAULT_ADDRESS",
+        "TOKEN_ID", 
+        "CURRENT_NONCE",
+        "TEE_IDENTITY",
+        "OG_RPC_URL",
+    ]
+    missing = [var for var in required if not os.getenv(var)]
+    if missing:
+        raise EnvironmentError(
+            f"Missing required environment variables: {', '.join(missing)}\n"
+            f"Copy tee-worker/.env.example to tee-worker/.env and fill in the values."
+        )
+    
+    # Validasi format address
+    address_vars = ["POLICY_VAULT_ADDRESS", "AGENT_NFT_ADDRESS", "TARGET_DEX_ADDRESS"]
+    for var in address_vars:
+        val = os.getenv(var, "")
+        if val and not (val.startswith("0x") and len(val) == 42):
+            raise ValueError(f"{var}='{val}' bukan Ethereum address yang valid")
+    
+    print("✅ Environment validation passed")
+
+
+def verify_rpc_connection():
+    """Ping RPC dan verifikasi chain ID sesuai."""
+    from web3 import Web3
+    rpc_url = os.getenv("OG_RPC_URL")
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    
+    if not w3.is_connected():
+        raise ConnectionError(f"Cannot connect to RPC: {rpc_url}")
+    
+    chain_id = w3.eth.chain_id
+    expected = int(os.getenv("OG_CHAIN_ID", "16602"))
+    if chain_id != expected:
+        raise ValueError(f"Wrong chain! Expected {expected}, got {chain_id}")
+    
+    print(f"✅ RPC connected | Chain ID: {chain_id} | Block: {w3.eth.block_number}")
+
+
 # ---------------------------------------------------------------------------
 # Main simulation
 # ---------------------------------------------------------------------------
@@ -341,6 +387,14 @@ if __name__ == "__main__":
         os.environ["TOKEN_ID"] = str(args.token_id)
     if args.nonce is not None:
         os.environ["CURRENT_NONCE"] = str(args.nonce)
+
+    # NEW: Validate environment and RPC connection before starting
+    try:
+        validate_environment()
+        verify_rpc_connection()
+    except Exception as e:
+        print(f"\n[!] Startup validation failed: {e}")
+        sys.exit(1)
 
     try:
         result = run_tee_worker_cycle(

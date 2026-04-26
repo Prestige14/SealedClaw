@@ -6,7 +6,10 @@
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",
     "deploy": "npx hardhat run scripts/deploy.ts",
-    "deploy:testnet": "npx hardhat run scripts/deploy.ts --network galileo"
+    "deploy:testnet": "npx hardhat run scripts/deploy.ts --network galileo",
+    "health": "npx hardhat run scripts/health_check.ts --network galileo",
+    "e2e": "bash scripts/e2e_demo.sh",
+    "submit": "npx hardhat run scripts/submit_payload.ts --network galileo"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

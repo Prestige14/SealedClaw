@@ -4,12 +4,13 @@ import {
   Shield, Target, Swords, Rocket, Settings2,
   Cpu, CheckCircle, AlertTriangle, Loader2, ChevronRight, Lock, Zap
 } from 'lucide-react';
+import { CONFIG } from '../config';
 
 // ── Configuration ──────────────────────────────────────────────────────────────
-const AGENT_ADDRESS    = "0xD40628dF285897C72Ecb7f5b2dEb31a6Bfd7F815";
-const VAULT_ADDRESS    = "0xC36d724BFbC540F2b4f531AaB7B941B3DaD20Eb8";
-const STRATEGY_ADDRESS = "0x9a0d057FCEadB9C7E876b15948b37F5E2405E18a";
-const GALILEO_CHAIN_ID = '0x40da';
+const AGENT_ADDRESS    = CONFIG.AGENT_ADDRESS;
+const VAULT_ADDRESS    = CONFIG.VAULT_ADDRESS;
+const STRATEGY_ADDRESS = CONFIG.STRATEGY_ADDRESS;
+const GALILEO_CHAIN_ID = CONFIG.CHAIN_ID;
 
 const AGENT_ABI = [
   "function mintAgent(string memory tokenURI) external payable",
