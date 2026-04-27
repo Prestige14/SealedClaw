@@ -12,7 +12,7 @@ interface IMockDEX {
  * @notice Adapter that routes trades to the persistent MockDEX contract.
  */
 contract MockDEXAdapter is IDEXAdapter {
-    address public constant MOCK_DEX = 0xcf37B8CE11477101E6e1700a6c4e27d32E962D53;
+    address public constant MOCK_DEX = 0x652EdA0876EF813dC397D01cfAB20457a80c113b;
 
     function swap(
         address tokenIn,

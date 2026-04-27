@@ -177,7 +177,7 @@ export default function DashboardPage({ account }) {
       let wethBal = 0n;
       try { wethBal = await weth.balanceOf(VAULT_ADDRESS); } catch (e) {}
 
-      const mockDexAddress = "0xcf37B8CE11477101E6e1700a6c4e27d32E962D53";
+      const mockDexAddress = "0x652EdA0876EF813dC397D01cfAB20457a80c113b";
       const mockDexAbi = ["function getVirtualBalance(uint256 tokenId, string asset) view returns (uint256)"];
       const mockDex = new ethers.Contract(mockDexAddress, mockDexAbi, provider);
       
