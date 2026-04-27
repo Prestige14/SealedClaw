@@ -1,13 +1,13 @@
 import React from 'react';
 import { Cpu, Shield, Zap, TrendingUp } from 'lucide-react';
 
-const AgentCard = ({ tokenId, owner, nonce, isActive, isPending }) => {
+const AgentCard = ({ tokenId, owner, nonce, isActive, isPending, roleName, roleEmoji }) => {
   return (
     <div className={`glass-card transition-all duration-500 overflow-hidden ${isActive ? 'ring-2 ring-primary/40 p-1' : ''}`}>
       <div className="bg-surface p-6 rounded-[1.8rem]">
         <div className="flex justify-between items-start mb-8">
-          <div className="w-14 h-14 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center shadow-lg transform -rotate-6">
-            <Cpu size={32} className="text-white" />
+          <div className="w-14 h-14 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center shadow-lg transform -rotate-6 text-2xl">
+            {roleEmoji || <Cpu size={32} className="text-white" />}
           </div>
           <div className="flex flex-col items-end gap-2">
              <span className={`status-badge ${isPending ? 'badge-pending' : 'badge-active'}`}>
@@ -17,7 +17,7 @@ const AgentCard = ({ tokenId, owner, nonce, isActive, isPending }) => {
           </div>
         </div>
 
-        <h3 className="text-xl font-black text-white mb-2">Agent Vanguard</h3>
+        <h3 className="text-xl font-black text-white mb-2">{roleName || 'Agent Vanguard'}</h3>
         <p className="text-gray-400 text-xs mb-6 line-clamp-2">Autonomous trading unit specialized in high-volatility 0G assets with TEE verification protocol.</p>
         
         <div className="grid grid-cols-2 gap-3 mb-8">

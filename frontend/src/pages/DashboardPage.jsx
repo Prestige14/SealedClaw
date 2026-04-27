@@ -50,6 +50,16 @@ const ERC721_ABI = [
   "function isApprovedForAll(address owner, address operator) external view returns (bool)"
 ];
 
+const STRATEGY_ABI = [
+  "function getStrategy(uint256 tokenId) external view returns (tuple(uint8 strategyClass, uint256 customBuyThresholdBps, uint256 customReduceThresholdBps, uint256 customBuySizeBps, uint256 committedAt, bool committed))"
+];
+
+const STRATEGY_NAMES = ["Safe Guardian", "Yield Sniper", "Balanced Merc", "Moon Chaser", "Custom"];
+const STRATEGY_EMOJIS = ["🛡️", "🎯", "⚔️", "🚀", "⚙️"];
+
+const WETH_ADDRESS = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"; // Example for Galileo/Testnet WETH
+const ERC20_ABI = ["function balanceOf(address account) view returns (uint256)"];
+
 const fmt = (wei) => {
   if (wei === undefined || wei === null) return '0.0000';
   try {
@@ -61,9 +71,10 @@ const fmt = (wei) => {
 
 export default function DashboardPage({ account }) {
   const [tokenId, setTokenId] = useState('');
-  const [ownedTokens, setOwnedTokens] = useState([]);
+  const [ownedTokens, setOwnedTokens] = useState([]); // Array of { id, roleName, roleEmoji }
   const [agentDetails, setAgentDetails] = useState(null);
   const [vaultBalance, setVaultBalance] = useState(0n);
+  const [tokenBalances, setTokenBalances] = useState([]); // { name, value }
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', msg: '' });
 
@@ -77,6 +88,9 @@ export default function DashboardPage({ account }) {
   const [isListed, setIsListed] = useState(false);
   const [handoverAddress, setHandoverAddress] = useState('');
   const [pendingHandover, setPendingHandover] = useState(null); // { newOwner, unlocksAt }
+  const [agentRole, setAgentRole] = useState({ name: 'Unassigned', emoji: '🤖' });
+  const [withdrawAmount, setWithdrawAmount] = useState('0.1');
+  const [customDeposit, setCustomDeposit] = useState('0.1');
 
   const showStatus = (msg, type = 'info') => {
     setStatus({ msg, type });
@@ -96,25 +110,26 @@ export default function DashboardPage({ account }) {
       }
 
       const agent = new ethers.Contract(AGENT_ADDRESS, AGENT_ABI, provider);
+      const sm = new ethers.Contract(CONFIG.STRATEGY_ADDRESS, STRATEGY_ABI, provider);
       const total = Number(await agent.totalMinted());
-      console.log(`Total agents minted in contract: ${total}`);
       
       const tokens = [];
-      // Optimization: we only scan if total is reasonable
       for (let i = 0; i < total; i++) {
         try {
           const owner = await agent.ownerOf(i);
           if (owner.toLowerCase() === account.toLowerCase()) {
-            tokens.push(i.toString());
+            const s = await sm.getStrategy(i);
+            tokens.push({
+              id: i.toString(),
+              roleName: s.committed ? STRATEGY_NAMES[s.strategyClass] : "Unassigned",
+              roleEmoji: s.committed ? STRATEGY_EMOJIS[s.strategyClass] : "🤖"
+            });
           }
-        } catch (e) {
-          console.error(`Error checking owner of token ${i}:`, e);
-        }
+        } catch (e) {}
       }
       
-      console.log(`Found ${tokens.length} tokens for account ${account}`);
       setOwnedTokens(tokens);
-      if (tokens.length > 0 && !tokenId) setTokenId(tokens[0]);
+      if (tokens.length > 0 && !tokenId) setTokenId(tokens[0].id);
     } catch (err) {
       console.error("fetchOwnedTokens error:", err);
     }
@@ -157,9 +172,32 @@ export default function DashboardPage({ account }) {
       const mkt = new ethers.Contract(CONFIG.AGENT_MARKETPLACE, MARKETPLACE_ABI, provider);
       const listing = await mkt.listings(tokenId);
 
+      // 4. Token Detection (Real & Virtual)
+      const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, provider);
+      let wethBal = 0n;
+      try { wethBal = await weth.balanceOf(VAULT_ADDRESS); } catch (e) {}
+
+      const mockDexAddress = "0xcf37B8CE11477101E6e1700a6c4e27d32E962D53";
+      const mockDexAbi = ["function getVirtualBalance(uint256 tokenId, string asset) view returns (uint256)"];
+      const mockDex = new ethers.Contract(mockDexAddress, mockDexAbi, provider);
+      
+      let vEthBal = 0n;
+      try {
+        vEthBal = await mockDex.getVirtualBalance(tokenId, "ETH");
+      } catch (e) {
+        console.warn("Failed to fetch virtual balance:", e);
+      }
+
       setAgentDetails({ owner, nonce: Number(nonce), isPending: pt.transferInitiatedAt > 0n });
       setVaultBalance(balance);
+      setTokenBalances([
+        { name: 'WETH', value: wethBal },
+        { name: 'vETH', value: vEthBal }
+      ]);
       setIsListed(listing.isActive);
+      
+      const currentRole = ownedTokens.find(t => t.id === tokenId);
+      if (currentRole) setAgentRole({ name: currentRole.roleName, emoji: currentRole.roleEmoji });
       
       if (pt.transferInitiatedAt > 0n) {
         setPendingHandover({
@@ -273,6 +311,25 @@ export default function DashboardPage({ account }) {
     }
   };
 
+  const withdrawFunds = async () => {
+    setLoading(true);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const vault = new ethers.Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+      
+      showStatus("Withdrawing from Enclave...", "info");
+      const tx = await vault.withdraw(tokenId, ethers.parseEther(withdrawAmount));
+      await tx.wait();
+      showStatus("Withdrawal Successful!", "success");
+      updateDashboard();
+    } catch (err) {
+      showStatus(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const savePolicy = async () => {
     setLoading(true);
     try {
@@ -339,16 +396,23 @@ export default function DashboardPage({ account }) {
               </button>
             </div>
             
-            <div className="grid grid-cols-1 gap-4">
-              {ownedTokens.map(id => (
-                <div key={id} onClick={() => setTokenId(id)} className="cursor-pointer">
-                  <AgentCard 
-                    tokenId={id} 
-                    owner={agentDetails?.owner} 
-                    nonce={agentDetails?.nonce} 
-                    isActive={tokenId === id}
-                    isPending={agentDetails?.isPending}
-                  />
+            <div className="space-y-4">
+              {ownedTokens.map(t => (
+                <div 
+                  key={t.id}
+                  onClick={() => setTokenId(t.id)}
+                  className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                    tokenId === t.id ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10' : 'bg-white/5 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                   <AgentCard 
+                     tokenId={t.id} 
+                     owner={account} 
+                     nonce={tokenId === t.id ? agentDetails?.nonce : "?"} 
+                     isActive={tokenId === t.id}
+                     roleName={t.roleName}
+                     roleEmoji={t.roleEmoji}
+                   />
                 </div>
               ))}
               {ownedTokens.length === 0 && (
@@ -377,37 +441,49 @@ export default function DashboardPage({ account }) {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={[
+                  {(() => {
+                    const COLORS = { '0G Native': '#3b82f6', 'vETH': '#f59e0b', 'WETH': '#10b981' };
+                    const chartData = [
                       { name: '0G Native', value: Number(ethers.formatEther(vaultBalance)) },
-                      { name: 'Allocated Assets', value: 0 },
-                    ]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#10b981" />
-                  </Pie>
+                      { name: 'vETH', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'vETH')?.value || 0n)) },
+                      { name: 'WETH', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'WETH')?.value || 0n)) },
+                    ].filter(d => d.value > 0);
+                    return (
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      >
+                        {chartData.map((entry) => (
+                          <Cell key={entry.name} fill={COLORS[entry.name] || '#8b5cf6'} />
+                        ))}
+                      </Pie>
+                    );
+                  })()}
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                     itemStyle={{ color: '#fff' }}
+                    formatter={(value, name) => [`${value.toFixed(4)}`, name]}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex justify-center gap-6 mt-4">
-               <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Native 0G</span>
-               </div>
-               <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Tokens</span>
-               </div>
+            <div className="flex justify-center gap-6 mt-4 flex-wrap">
+              {[
+                { name: '0G Native', color: 'bg-blue-500', value: Number(ethers.formatEther(vaultBalance)) },
+                { name: 'vETH', color: 'bg-amber-500', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'vETH')?.value || 0n)) },
+                { name: 'WETH', color: 'bg-green-500', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'WETH')?.value || 0n)) },
+              ].filter(d => d.value > 0).map(({ name, color }) => (
+                <div key={name} className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${color}`}></div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">{name}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -429,18 +505,58 @@ export default function DashboardPage({ account }) {
                   <h2 className="text-xl font-bold text-white">Quick Fund</h2>
                 </div>
                 <div className="space-y-4">
-                  <div className="flex gap-2">
-                    {['0.1', '0.5', '1.0', '5.0'].map(val => (
-                      <button 
-                        key={val} 
-                        onClick={() => depositFunds(val)}
-                        className="flex-1 py-3 rounded-xl bg-white/5 border border-white/5 text-xs font-bold hover:bg-white/10 hover:border-white/20 transition-all"
-                      >
-                        {val} 0G
-                      </button>
-                    ))}
+                  <div>
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">Deposit Amount (0G)</label>
+                    <input 
+                      type="number" 
+                      value={customDeposit} 
+                      onChange={(e) => setCustomDeposit(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                      placeholder="0.0"
+                    />
                   </div>
+                  <button 
+                    onClick={() => depositFunds(customDeposit)}
+                    disabled={loading || !tokenId}
+                    className="w-full py-4 rounded-xl bg-primary text-black font-black uppercase tracking-widest text-[10px] hover:bg-primary/80 transition-all disabled:opacity-30"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Confirm Deposit'}
+                  </button>
                   <p className="text-[10px] text-gray-600 uppercase font-bold text-center tracking-widest">Instant allocation to enclave vault</p>
+                </div>
+              </div>
+
+              {/* Withdraw Assets */}
+              <div className="glass-card p-8 border-red-500/10">
+                <div className="flex items-center gap-3 mb-6">
+                  <ArrowDownCircle size={24} className="text-red-400" />
+                  <h2 className="text-xl font-bold text-white">Withdraw Assets</h2>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                       <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block">Withdraw Amount (0G)</label>
+                       <button 
+                        onClick={() => setWithdrawAmount(ethers.formatEther(vaultBalance))}
+                        className="text-[10px] font-black text-primary hover:text-primary/80 uppercase"
+                       >
+                         Max Balance
+                       </button>
+                    </div>
+                    <input 
+                      type="number" 
+                      value={withdrawAmount} 
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-red-500/50 transition-colors"
+                    />
+                  </div>
+                  <button 
+                    onClick={withdrawFunds}
+                    disabled={loading || !tokenId}
+                    className="w-full py-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-black uppercase tracking-widest text-[10px] hover:bg-red-500/20 transition-all disabled:opacity-30"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Process Withdrawal'}
+                  </button>
                 </div>
               </div>
 

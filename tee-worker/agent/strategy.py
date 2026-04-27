@@ -73,7 +73,9 @@ def make_trading_decision(
         Natural language string from user's Telegram message.
     """
     params = _load_strategy_params()
-    mock_erc20 = "0x1111111111111111111111111111111111111111"
+    # Use address(0) as tokenOut for BUY — MockDEX handles native-to-native.
+    # A real integration would set this to the ERC20 token being purchased.
+    ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
     # Extract state from memory if available
     last_price: float = 0.0
@@ -95,8 +97,14 @@ def make_trading_decision(
         action = ACTION_REDUCE_ONLY
         tech_rationale = "Handover protocol active. Forcing REDUCE_ONLY."
     elif previous_memory is None:
-        action = ACTION_HOLD
-        tech_rationale = "First execution cycle. Baseline not established."
+        # First run: only override to BUY if user explicitly asks via intent
+        intent_action = analyze_intent_override(intent, ACTION_HOLD, 0.0, params.buy_threshold_pct)
+        if intent_action == ACTION_BUY:
+            action = ACTION_BUY
+            tech_rationale = "Explicit user intent override on first cycle."
+        else:
+            action = ACTION_HOLD
+            tech_rationale = "First execution cycle. Baseline not established."
     elif last_price == 0:
         action = ACTION_HOLD
         tech_rationale = "Invalid historical price detected."
@@ -136,11 +144,12 @@ def make_trading_decision(
         user_intent=intent
     )
 
-    token_in = "0x0000000000000000000000000000000000000000"
-    token_out = mock_erc20
+    token_in = ZERO_ADDRESS
+    token_out = ZERO_ADDRESS
     if action == ACTION_REDUCE_ONLY:
-        token_in = mock_erc20
-        token_out = "0x0000000000000000000000000000000000000000"
+        # REDUCE_ONLY is a sell: some ERC20 -> native. For mock, both are address(0).
+        token_in = ZERO_ADDRESS
+        token_out = ZERO_ADDRESS
 
     return {
         "action": action,

@@ -50,7 +50,7 @@ def generate_ai_rationale(
 
     try:
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_context}
@@ -95,7 +95,7 @@ def analyze_intent_action(intent: str) -> str:
     
     try:
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
             temperature=0.0,

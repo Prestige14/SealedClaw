@@ -188,7 +188,9 @@ def execute_sealed_trade(intent: str):
     ]
     abi_policy = [
         {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}], "name": "getPolicy", "outputs": [{"components": [{"internalType": "uint256", "name": "maxDrawdown", "type": "uint256"}, {"internalType": "uint256", "name": "riskMaxPercent", "type": "uint256"}, {"internalType": "address[]", "name": "allowedTokens", "type": "address[]"}, {"internalType": "address[]", "name": "allowedDEXs", "type": "address[]"}, {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"}], "internalType": "struct PolicyVault.Policy", "name": "", "type": "tuple"}], "stateMutability": "view", "type": "function"},
-        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}, {"components": [{"internalType": "uint256", "name": "maxDrawdown", "type": "uint256"}, {"internalType": "uint256", "name": "riskMaxPercent", "type": "uint256"}, {"internalType": "address[]", "name": "allowedTokens", "type": "address[]"}, {"internalType": "address[]", "name": "allowedDEXs", "type": "address[]"}, {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"}], "internalType": "struct PolicyVault.Policy", "name": "newPolicy", "type": "tuple"}], "name": "updatePolicy", "outputs": [], "stateMutability": "nonpayable", "type": "function"}
+        {"inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}, {"components": [{"internalType": "uint256", "name": "maxDrawdown", "type": "uint256"}, {"internalType": "uint256", "name": "riskMaxPercent", "type": "uint256"}, {"internalType": "address[]", "name": "allowedTokens", "type": "address[]"}, {"internalType": "address[]", "name": "allowedDEXs", "type": "address[]"}, {"internalType": "uint256", "name": "dailyLimit", "type": "uint256"}], "internalType": "struct PolicyVault.Policy", "name": "newPolicy", "type": "tuple"}], "name": "updatePolicy", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+        {"inputs": [{"internalType": "address", "name": "adapter", "type": "address"}], "name": "approvedAdapters", "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
+        {"inputs": [{"internalType": "address", "name": "adapter", "type": "address"}, {"internalType": "bool", "name": "approved", "type": "bool"}], "name": "setAdapter", "outputs": [], "stateMutability": "nonpayable", "type": "function"}
     ]
     
     contract_nonce = web3.eth.contract(address=policy_vault_address_checksum, abi=abi_nonce)
@@ -251,6 +253,19 @@ def execute_sealed_trade(intent: str):
             signed_policy_tx = web3.eth.account.sign_transaction(tx_policy, relayer_pk)
             tx_hash = web3.eth.send_raw_transaction(signed_policy_tx.raw_transaction)
             print(f"[+] Autonomous Policy sync complete! Tx: {web3.to_hex(tx_hash)}")
+            web3.eth.wait_for_transaction_receipt(tx_hash)
+
+        # --- NEW: Check Global Adapter Approval ---
+        is_adapter_approved = call_with_retry(lambda: contract_policy.functions.approvedAdapters(target_dex_checksum).call())
+        if not is_adapter_approved:
+            print(f"[!] Adapter {target_dex_checksum} not approved globally. Fixing now...")
+            tx_adapter = contract_policy.functions.setAdapter(target_dex_checksum, True).build_transaction({
+                "from": relayer_account.address,
+                "nonce": web3.eth.get_transaction_count(relayer_account.address),
+            })
+            signed_adapter_tx = web3.eth.account.sign_transaction(tx_adapter, relayer_pk)
+            tx_hash = web3.eth.send_raw_transaction(signed_adapter_tx.raw_transaction)
+            print(f"[+] Global Adapter approved! Tx: {web3.to_hex(tx_hash)}")
             web3.eth.wait_for_transaction_receipt(tx_hash)
 
         current_nonce = call_with_retry(lambda: contract_nonce.functions.nonces(token_id_env).call())
