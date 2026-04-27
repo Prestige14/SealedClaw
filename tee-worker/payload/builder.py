@@ -36,23 +36,28 @@ def build_strategy_data(decision: dict[str, Any]) -> bytes:
     """
     ABI-encode the trading decision into ``strategyData`` bytes for Solidity.
 
-    Encodes the decision as ``(string action, uint256 amount, string asset)``
-    so it can be decoded on-chain inside PolicyVault or downstream DEX adapters.
+    Encodes the decision as ``abi.encode(string, uint256, address, address)``
+    which is the exact format PolicyVault.executeWithProof() expects:
+
+        (string action, uint256 amountInStrategy, address tokenIn, address tokenOut)
 
     Parameters
     ----------
     decision : dict[str, Any]
         Decision dict from ``agent.strategy.make_trading_decision``. Required keys:
-        - ``action`` (str): ``"BUY"``, ``"HOLD"``, or ``"REDUCE_ONLY"``.
-        - ``amount_wei`` (int): Trade size in wei.
-        - ``asset`` (str): Asset ticker (e.g. ``"ETH"``).
+        - ``action``      (str):  ``"BUY"``, ``"HOLD"``, or ``"REDUCE_ONLY"``.
+        - ``amount_wei``  (int):  Trade size in wei (uint256).
+        - ``token_in``    (str):  Token being sold (address). address(0) for native.
+        - ``token_out``   (str):  Token being received (address). address(0) for native.
 
     Returns
     -------
     bytes
         ABI-encoded bytes representing
-        ``abi.encode(string action, uint256 amount, string asset)``
-        in Solidity — exactly the format expected by the DEX adapter contract.
+        ``abi.encode(string, uint256, address, address)``
+        in Solidity — the format expected by PolicyVault.executeWithProof()
+        and decoded on-chain as:
+        ``(string memory action, uint256 amountInStrategy, address tokenIn, address tokenOut)``.
 
     Raises
     ------
@@ -66,6 +71,9 @@ def build_strategy_data(decision: dict[str, Any]) -> bytes:
     token_out: str = decision.get("token_out", "0x0000000000000000000000000000000000000000")
 
     # Encode as Solidity: abi.encode(string, uint256, address, address)
+    # Matches the decode on PolicyVault line 254:
+    #   (string memory action, uint256 amountInStrategy, address tokenIn, address tokenOut)
+    #   = abi.decode(strategyData, (string, uint256, address, address));
     encoded: bytes = eth_abi.encode(
         ["string", "uint256", "address", "address"],
         [action, amount_wei, token_in, token_out],

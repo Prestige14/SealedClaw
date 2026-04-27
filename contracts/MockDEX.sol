@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 /**
  * @title MockDEX
  * @dev Simulated DEX for SealedClaw on 0G Galileo Testnet.
@@ -9,13 +11,15 @@ pragma solidity ^0.8.24;
  *
  * In production, this would call a real DEX router (e.g. UniswapV3).
  */
-contract MockDEX {
+contract MockDEX is Ownable {
 
     // ── Virtual Asset Balances ─────────────────────────────────────────────────
     // Maps tokenId => asset ticker => virtual balance (in wei equivalent)
     mapping(uint256 => mapping(string => uint256)) public virtualBalances;
     // Maps tokenId => native 0G balance executed through this DEX
     mapping(uint256 => uint256) public nativeSwapped;
+
+    constructor() Ownable(msg.sender) {}
 
     // ── Events ─────────────────────────────────────────────────────────────────
     event TradeFinalized(
@@ -112,11 +116,14 @@ contract MockDEX {
     }
 
     /**
-     * @notice Emergency withdraw for contract owner (Hackathon safety).
+     * @notice Emergency withdraw — restricted to contract owner.
+     *         Uses onlyOwner (Ownable) instead of tx.origin to prevent
+     *         phishing attacks where a malicious contract could drain funds.
      */
-    function emergencyWithdraw() external {
-        // Simple owner check (deployer parity)
-        (bool ok, ) = payable(tx.origin).call{value: address(this).balance}("");
+    function emergencyWithdraw() external onlyOwner {
+        uint256 bal = address(this).balance;
+        require(bal > 0, "Nothing to withdraw");
+        (bool ok, ) = payable(msg.sender).call{value: bal}("");
         require(ok, "Withdraw failed");
     }
 

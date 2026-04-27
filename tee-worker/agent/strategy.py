@@ -144,10 +144,24 @@ def make_trading_decision(
         user_intent=intent
     )
 
-    token_in = ZERO_ADDRESS
-    token_out = ZERO_ADDRESS
-    if action == ACTION_REDUCE_ONLY:
-        # REDUCE_ONLY is a sell: some ERC20 -> native. For mock, both are address(0).
+    # -----------------------------------------------------------------------
+    # ABI Token Direction (matches PolicyVault decode expectation):
+    #   BUY         → native 0G in, ERC20 out  → token_in  = address(0), token_out = TOKEN_ADDR
+    #   REDUCE_ONLY → ERC20 in, native 0G out  → token_in  = TOKEN_ADDR, token_out = address(0)
+    #   HOLD        → no trade                 → both address(0)
+    # For the mock demo where both sides are address(0) is accepted by MockDEX.
+    # TOKEN_ADDRESS should be set in .env when using real ERC20 assets.
+    # -----------------------------------------------------------------------
+    TOKEN_ADDR = os.getenv("TOKEN_ADDRESS", ZERO_ADDRESS)
+
+    if action == ACTION_BUY:
+        token_in = ZERO_ADDRESS   # Native 0G (ETH equivalent) in
+        token_out = TOKEN_ADDR    # ERC20 token out (vETH in mock)
+    elif action == ACTION_REDUCE_ONLY:
+        token_in = TOKEN_ADDR     # ERC20 token in
+        token_out = ZERO_ADDRESS  # Native 0G out
+    else:
+        # HOLD — no swap, zero addresses
         token_in = ZERO_ADDRESS
         token_out = ZERO_ADDRESS
 

@@ -89,7 +89,7 @@ async function main() {
   // ── 7. Deploy AgentMarketplace ─────────────────────────────────────────────
   console.log("\nDeploying AgentMarketplace...");
   const AgentMarketplace = await ethers.getContractFactory("AgentMarketplace");
-  const marketplace = await AgentMarketplace.deploy(agentNFTAddress);
+  const marketplace = await AgentMarketplace.deploy(agentNFTAddress, strategyVaultAddress);
   await marketplace.waitForDeployment();
   const marketplaceAddress = await marketplace.getAddress();
   console.log(`AgentMarketplace deployed to: ${marketplaceAddress}`);

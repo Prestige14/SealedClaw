@@ -153,6 +153,8 @@ def execute_sealed_trade(intent: str):
     print(f"  [SKILL] SEALEDCLAW EXECUTING TRADE")
     print(f"{ '='*60 }\n")
 
+    CHAIN_ID = 16602  # 0G Galileo Testnet — hardcoded for replay protection
+
     # ---------------------------------------------------------
     # 1. SETUP WEB3 & FETCH DYNAMIC NONCE
     # ---------------------------------------------------------
@@ -249,6 +251,7 @@ def execute_sealed_trade(intent: str):
             tx_policy = contract_policy.functions.updatePolicy(token_id_env, new_policy).build_transaction({
                 "from": relayer_account.address,
                 "nonce": web3.eth.get_transaction_count(relayer_account.address),
+                "chainId": CHAIN_ID,
             })
             signed_policy_tx = web3.eth.account.sign_transaction(tx_policy, relayer_pk)
             tx_hash = web3.eth.send_raw_transaction(signed_policy_tx.raw_transaction)
@@ -262,6 +265,7 @@ def execute_sealed_trade(intent: str):
             tx_adapter = contract_policy.functions.setAdapter(target_dex_checksum, True).build_transaction({
                 "from": relayer_account.address,
                 "nonce": web3.eth.get_transaction_count(relayer_account.address),
+                "chainId": CHAIN_ID,
             })
             signed_adapter_tx = web3.eth.account.sign_transaction(tx_adapter, relayer_pk)
             tx_hash = web3.eth.send_raw_transaction(signed_adapter_tx.raw_transaction)
@@ -400,6 +404,7 @@ def execute_sealed_trade(intent: str):
         ).build_transaction({
             "from": relayer_account.address,
             "nonce": call_with_retry(lambda: web3.eth.get_transaction_count(relayer_account.address)),
+            "chainId": CHAIN_ID,
         }))
 
         # Sign Transaction
