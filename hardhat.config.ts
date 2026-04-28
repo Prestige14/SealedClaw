@@ -23,6 +23,11 @@ const config: HardhatUserConfig = {
       chainId: 16602,
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
+    og_mainnet: {
+      url: process.env.MAINNET_RPC_URL || "https://evmrpc.0g.ai",
+      chainId: 16601,
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+    },
   },
   etherscan: {
     apiKey: {

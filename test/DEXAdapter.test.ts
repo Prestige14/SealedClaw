@@ -23,13 +23,21 @@ describe("DEX Adapter Ecosystem", function () {
         agentNFT = await SealedClawAgent.deploy(0n);
         await agentNFT.waitForDeployment();
 
+        const TEEAttestationRegistry = await ethers.getContractFactory("TEEAttestationRegistry");
+        const registry = await TEEAttestationRegistry.deploy();
+        await registry.waitForDeployment();
+
         const PolicyVault = await ethers.getContractFactory("PolicyVault");
-        vault = await PolicyVault.deploy(await agentNFT.getAddress(), deployer.address);
+        vault = await PolicyVault.deploy(
+            await agentNFT.getAddress(),
+            deployer.address,
+            await registry.getAddress()
+        );
         await vault.waitForDeployment();
     });
 
     it("should return correct adapter names", async function () {
-        expect(await mockAdapter.adapterName()).to.equal("Mock DEX (Stateless)");
+        expect(await mockAdapter.adapterName()).to.equal("Mock DEX (Persistent)");
         expect(await xSwapAdapter.adapterName()).to.equal("XSwap Adapter");
     });
 

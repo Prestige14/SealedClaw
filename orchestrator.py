@@ -61,18 +61,22 @@ class OpenClawSkill:
 
 class OpenClawAgent:
     """An autonomous LLM-powered agent that utilizes OpenClaw skills."""
-    def __init__(self, name: str, model: str = "gpt-4o-mini"):
+    def __init__(self, name: str, model: str = "llama-3.3-70b-versatile"):
         self.name = name
         self.model = model
         self.skills = {}
         
-        # Ensure OpenAI API key exists for NLP reasoning
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        # Use Groq API (free, OpenAI-compatible) for NLP reasoning
+        self.api_key = os.getenv("GROQ_API_KEY")
         if not self.api_key:
-            print("[-] OPENAI_API_KEY missing from .env. OpenClaw Agent needs this for NLP routing!")
+            print("[-] GROQ_API_KEY missing from .env. OpenClaw Agent needs this for NLP routing!")
+            print("    Get a free key at: https://console.groq.com")
             self.client = None
         else:
-            self.client = OpenAI(api_key=self.api_key)
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://api.groq.com/openai/v1"
+            )
 
     def register_skill(self, skill: OpenClawSkill):
         self.skills[skill.name] = skill

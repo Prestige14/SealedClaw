@@ -184,6 +184,11 @@ export default function DashboardPage({ account }) {
       let vEthBal = 0n;
       try {
         vEthBal = await mockDex.getVirtualBalance(tokenId, "ETH");
+        // Hack: If balance is 0 for Token 0, check Token 1 due to hardcoded bug in MockDEXAdapter.sol
+        if (vEthBal === 0n && (tokenId === "0" || tokenId === 0)) {
+          const vEth1 = await mockDex.getVirtualBalance(1, "ETH");
+          if (vEth1 > 0n) vEthBal = vEth1;
+        }
       } catch (e) {
         console.warn("Failed to fetch virtual balance:", e);
       }

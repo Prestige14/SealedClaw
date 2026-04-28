@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title MockDEX
- * @dev Simulated DEX for SealedClaw on 0G Galileo Testnet.
- *      Accepts native 0G token and simulates swap to virtual assets (vETH, vBTC).
- *      Tracks virtual portfolio balances per iNFT tokenId for dashboard display.
- *
- * In production, this would call a real DEX router (e.g. UniswapV3).
+ * @title MockDEX (Legacy — Not Used in Production)
+ * @dev This is the original mock DEX with a non-standard API.
+ *      It is kept here for historical reference only.
+ *      The active adapter is contracts/mocks/MockDEXAdapter.sol which
+ *      implements IDEXAdapter and is used in all current tests and scripts.
+ *      Use contracts/mocks/MockDEXAdapter.sol instead.
  */
 contract MockDEX is Ownable {
 
@@ -117,8 +117,6 @@ contract MockDEX is Ownable {
 
     /**
      * @notice Emergency withdraw — restricted to contract owner.
-     *         Uses onlyOwner (Ownable) instead of tx.origin to prevent
-     *         phishing attacks where a malicious contract could drain funds.
      */
     function emergencyWithdraw() external onlyOwner {
         uint256 bal = address(this).balance;
@@ -130,4 +128,3 @@ contract MockDEX is Ownable {
     // Fallback to accept native 0G tokens
     receive() external payable {}
 }
-

@@ -68,9 +68,18 @@ async function main() {
   console.log("Approving MockDEXAdapter in PolicyVault...");
   await vault.setAdapter(dexAdapterAddress, true);
 
-  console.log("\nDeploying XSwapAdapter (Warning: using deployer address as mock router/wNative)...");
+  // Resolve XSwap router addresses from env — fall back to deployer for testnet demo
+  const xSwapRouter = process.env.XSWAP_ROUTER_ADDRESS || deployer.address;
+  const wNativeAddr  = process.env.WNATIVE_ADDRESS       || deployer.address;
+  if (xSwapRouter === deployer.address || wNativeAddr === deployer.address) {
+    console.warn(
+      "\n⚠️  WARNING: XSwapAdapter deployed with MOCK router/wNative (deployer.address).\n" +
+      "   Set XSWAP_ROUTER_ADDRESS and WNATIVE_ADDRESS in .env for production.\n"
+    );
+  }
+  console.log("\nDeploying XSwapAdapter...");
   const XSwapAdapter = await ethers.getContractFactory("XSwapAdapter");
-  const xSwap = await XSwapAdapter.deploy(deployer.address, deployer.address);
+  const xSwap = await XSwapAdapter.deploy(xSwapRouter, wNativeAddr);
   await xSwap.waitForDeployment();
   const xSwapAddress = await xSwap.getAddress();
   console.log(`XSwapAdapter deployed to: ${xSwapAddress}`);

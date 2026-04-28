@@ -62,9 +62,15 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
     let user: any;
     let pythonPayload: any;
     let vaultAddress: string;
+    let registry: any;
 
     before(async function () {
         [deployer, user] = await ethers.getSigners();
+
+        // ── Deploy TEEAttestationRegistry (required by PolicyVault constructor) ─
+        const TEEAttestationRegistry = await ethers.getContractFactory("TEEAttestationRegistry");
+        registry = await TEEAttestationRegistry.deploy();
+        await registry.waitForDeployment();
 
         // ── Step 1: Deploy SealedClawAgent NFT ────────────────────────────────
         const SealedClawAgent = await ethers.getContractFactory("SealedClawAgent");
@@ -77,7 +83,8 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         const PolicyVault = await ethers.getContractFactory("PolicyVault");
         const tempVault = await PolicyVault.deploy(
             await agentNFT.getAddress(),
-            deployer.address  // temporary placeholder — we will redeploy
+            deployer.address,         // temporary placeholder — we will redeploy
+            await registry.getAddress() // attestationRegistry
         );
         await tempVault.waitForDeployment();
         const tempVaultAddress = await tempVault.getAddress();
@@ -103,7 +110,8 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         console.log("  [Step 3] Deploying final PolicyVault with Python TEE key...");
         vault = await PolicyVault.deploy(
             await agentNFT.getAddress(),
-            teePubKey  // Python TEE key set at deployment — no cooldown
+            teePubKey,                // Python TEE key set at deployment — no cooldown
+            await registry.getAddress() // attestationRegistry
         );
         await vault.waitForDeployment();
         vaultAddress = await vault.getAddress();
@@ -113,7 +121,7 @@ describe("Phase 1 <-> Phase 2 Integration: TEE Signature Verification", function
         await vault.setAdapter(MOCK_DEX, true);
 
         // Confirm vault has the correct TEE key
-        const storedKey = await vault.teeEnclavePubKey();
+        const storedKey = await vault.defaultTeeKey();
         expect(storedKey.toLowerCase()).to.equal(
             teePubKey.toLowerCase(),
             "Vault must store Python TEE key"
@@ -249,9 +257,13 @@ describe("PolicyVault: withdraw(tokenId, amount) — Feature Unfreeze", function
         await agentNFT.waitForDeployment();
 
         const PolicyVault = await ethers.getContractFactory("PolicyVault");
+        const TEEAttestationRegistry = await ethers.getContractFactory("TEEAttestationRegistry");
+        const reg = await TEEAttestationRegistry.deploy();
+        await reg.waitForDeployment();
         vault = await PolicyVault.deploy(
             await agentNFT.getAddress(),
-            deployer.address   // TEE key placeholder
+            deployer.address,          // TEE key placeholder
+            await reg.getAddress()     // attestationRegistry
         );
         await vault.waitForDeployment();
 
