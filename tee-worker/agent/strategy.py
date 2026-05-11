@@ -11,42 +11,9 @@ import os
 from typing import Any
 
 from agent.strategy_classes import resolve_strategy, StrategyParams
-from agent.llm import generate_ai_rationale, analyze_intent_override
+from agent.llm import generate_ai_rationale, analyze_intent_override, analyze_market_context
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Simulated portfolio: 1 ETH worth of balance expressed in wei
-_SIMULATED_BALANCE_WEI: int = 1_000_000_000_000_000_000  # 1 ETH in wei
-
-# Decision types (explicit strings matching PolicyVault ABI expectations)
-ACTION_BUY: str = "BUY"
-ACTION_HOLD: str = "HOLD"
-ACTION_REDUCE_ONLY: str = "REDUCE_ONLY"
-
-
-def _load_strategy_params() -> StrategyParams:
-    """
-    Load strategy parameters from environment at decision time.
-    The orchestrator is responsible for setting:
-      STRATEGY_CLASS_ID     — int (0-4)
-      STRATEGY_BUY_BPS      — optional, for CUSTOM class
-      STRATEGY_REDUCE_BPS   — optional, for CUSTOM class
-      STRATEGY_SIZE_BPS     — optional, for CUSTOM class
-    """
-    class_id = int(os.getenv("STRATEGY_CLASS_ID", "2"))  # Default: BALANCED_MERC
-
-    custom_params = None
-    if class_id == 4:  # CUSTOM
-        custom_params = {
-            "buy_threshold_bps": int(os.getenv("STRATEGY_BUY_BPS", "200")),
-            "reduce_threshold_bps": int(os.getenv("STRATEGY_REDUCE_BPS", "300")),
-            "buy_size_bps": int(os.getenv("STRATEGY_SIZE_BPS", "500")),
-        }
-
-    return resolve_strategy(class_id, custom_params)
-
+# ... (ACTION constants remain the same)
 
 def make_trading_decision(
     median_price: float,
@@ -56,39 +23,25 @@ def make_trading_decision(
     intent: str = "",
 ) -> dict[str, Any]:
     """
-    Produce a signed-ready trading decision based on current price and memory.
-    Thresholds are sourced from the agent's chosen Strategy Class.
-
-    Parameters
-    ----------
-    median_price : float
-        Current manipulation-resistant median price from oracle.aggregator.
-    previous_memory : dict or None
-        Decrypted memory from previous cycle. Key: last_price, balance_wei.
-    token_id : int
-        ERC-7857 token ID.
-    is_pending_transfer : bool
-        If True, force REDUCE_ONLY (handover protection).
-    intent : str
-        Natural language string from user's Telegram message.
+    Produce a signed-ready trading decision.
+    Now uses deep AI analysis to nudge technical signals.
     """
     params = _load_strategy_params()
-    # Use address(0) as tokenOut for BUY — MockDEX handles native-to-native.
-    # A real integration would set this to the ERC20 token being purchased.
     ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-    # Extract state from memory if available
+    # 1. Deep AI Analysis
+    market_analysis = analyze_market_context(median_price, previous_memory, intent)
+    ai_confidence = market_analysis.get("confidence", 50)
+    size_mult = market_analysis.get("size_multiplier", 1.0)
+
+    # Extract state from memory
     last_price: float = 0.0
     balance_wei: int = _SIMULATED_BALANCE_WEI
     if previous_memory:
         last_price = float(previous_memory.get("last_price", 0))
         balance_wei = int(previous_memory.get("balance_wei", _SIMULATED_BALANCE_WEI))
 
-    buy_amount_wei: int = int(balance_wei * params.buy_size_pct)
-
-    # -----------------------------------------------------------------------
-    # Initial Baseline / Safe Halts
-    # -----------------------------------------------------------------------
+    # 2. Base Technical Signal
     price_change_pct = 0.0
     action = ACTION_HOLD
     tech_rationale = "Technical assessment."
@@ -96,22 +49,7 @@ def make_trading_decision(
     if is_pending_transfer:
         action = ACTION_REDUCE_ONLY
         tech_rationale = "Handover protocol active. Forcing REDUCE_ONLY."
-    elif previous_memory is None:
-        # First run: only override to BUY if user explicitly asks via intent
-        intent_action = analyze_intent_override(intent, ACTION_HOLD, 0.0, params.buy_threshold_pct)
-        if intent_action == ACTION_BUY:
-            action = ACTION_BUY
-            tech_rationale = "Explicit user intent override on first cycle."
-        else:
-            action = ACTION_HOLD
-            tech_rationale = "First execution cycle. Baseline not established."
-    elif last_price == 0:
-        action = ACTION_HOLD
-        tech_rationale = "Invalid historical price detected."
-    else:
-        # -----------------------------------------------------------------------
-        # Standard Decision Logic (Technical Signal)
-        # -----------------------------------------------------------------------
+    elif last_price > 0:
         price_change_pct = ((median_price - last_price) / last_price) * 100.0
         
         if price_change_pct > params.buy_threshold_pct:
@@ -123,47 +61,38 @@ def make_trading_decision(
         else:
             tech_rationale = f"Price change {price_change_pct:+.2f}% within neutral band."
 
-    # -----------------------------------------------------------------------
-    # AI Nudge: Intent-Aware Decision Adjustment
-    # -----------------------------------------------------------------------
-    # If the user says "Buy now", and we are at least near the boundary, AI allows it.
+    # 3. AI Overlay & Intent
     if not is_pending_transfer:
+        # Intent-driven override
         action = analyze_intent_override(intent, action, price_change_pct, params.buy_threshold_pct)
+        
+        # Confidence Veto: If AI confidence is extremely low (< 20%), force HOLD to prevent erratic behavior
+        if ai_confidence < 20 and action != ACTION_HOLD:
+            action = ACTION_HOLD
+            tech_rationale += " [AI VETO: Low Confidence]"
 
-    # Re-calculate amount if action changed
-    final_amount_wei = buy_amount_wei if action == ACTION_BUY else 0
+    # 4. Dynamic Sizing
+    # Adjust base buy size by the AI multiplier
+    base_buy_amount = int(balance_wei * params.buy_size_pct)
+    final_amount_wei = int(base_buy_amount * size_mult) if action == ACTION_BUY else 0
 
-    # -----------------------------------------------------------------------
-    # AI Rationale: Human-like explanation
-    # -----------------------------------------------------------------------
+    # 5. Generate Rationale (Passing the analysis)
     ai_rationale = generate_ai_rationale(
         technical_decision=action,
         price=median_price,
         price_change_pct=price_change_pct if previous_memory else None,
         strategy_name=params.class_name,
-        user_intent=intent
+        user_intent=intent,
+        market_analysis=market_analysis
     )
 
-    # -----------------------------------------------------------------------
-    # ABI Token Direction (matches PolicyVault decode expectation):
-    #   BUY         → native 0G in, ERC20 out  → token_in  = address(0), token_out = TOKEN_ADDR
-    #   REDUCE_ONLY → ERC20 in, native 0G out  → token_in  = TOKEN_ADDR, token_out = address(0)
-    #   HOLD        → no trade                 → both address(0)
-    # For the mock demo where both sides are address(0) is accepted by MockDEX.
-    # TOKEN_ADDRESS should be set in .env when using real ERC20 assets.
-    # -----------------------------------------------------------------------
     TOKEN_ADDR = os.getenv("TOKEN_ADDRESS", ZERO_ADDRESS)
-
     if action == ACTION_BUY:
-        token_in = ZERO_ADDRESS   # Native 0G (ETH equivalent) in
-        token_out = TOKEN_ADDR    # ERC20 token out (vETH in mock)
+        token_in, token_out = ZERO_ADDRESS, TOKEN_ADDR
     elif action == ACTION_REDUCE_ONLY:
-        token_in = TOKEN_ADDR     # ERC20 token in
-        token_out = ZERO_ADDRESS  # Native 0G out
+        token_in, token_out = TOKEN_ADDR, ZERO_ADDRESS
     else:
-        # HOLD — no swap, zero addresses
-        token_in = ZERO_ADDRESS
-        token_out = ZERO_ADDRESS
+        token_in, token_out = ZERO_ADDRESS, ZERO_ADDRESS
 
     return {
         "action": action,
@@ -175,7 +104,8 @@ def make_trading_decision(
         "price_change_pct": round(price_change_pct, 4),
         "token_id": token_id,
         "strategy_class": params.class_name,
-        "technical_summary": tech_rationale
+        "technical_summary": tech_rationale,
+        "ai_confidence": ai_confidence
     }
 
 

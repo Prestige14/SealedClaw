@@ -69,9 +69,23 @@ async function main() {
   await vault.setAdapter(dexAdapterAddress, true);
 
   // Resolve XSwap router addresses from env — fall back to deployer for testnet demo
-  const xSwapRouter = process.env.XSWAP_ROUTER_ADDRESS || deployer.address;
-  const wNativeAddr  = process.env.WNATIVE_ADDRESS       || deployer.address;
-  if (xSwapRouter === deployer.address || wNativeAddr === deployer.address) {
+  const networkName = hre.network.name;
+  const isMainnet = networkName === "og_mainnet";
+
+  const xSwapRouter = process.env.XSWAP_ROUTER_ADDRESS;
+  const wNativeAddr  = process.env.WNATIVE_ADDRESS;
+
+  if (isMainnet && (!xSwapRouter || !wNativeAddr)) {
+    throw new Error(
+      "❌ CRITICAL: Cannot deploy to Mainnet without XSWAP_ROUTER_ADDRESS and WNATIVE_ADDRESS.\n" +
+      "   Please set these in your .env file."
+    );
+  }
+
+  const finalRouter = xSwapRouter || deployer.address;
+  const finalWNative = wNativeAddr  || deployer.address;
+
+  if (!xSwapRouter || !wNativeAddr) {
     console.warn(
       "\n⚠️  WARNING: XSwapAdapter deployed with MOCK router/wNative (deployer.address).\n" +
       "   Set XSWAP_ROUTER_ADDRESS and WNATIVE_ADDRESS in .env for production.\n"
@@ -79,7 +93,7 @@ async function main() {
   }
   console.log("\nDeploying XSwapAdapter...");
   const XSwapAdapter = await ethers.getContractFactory("XSwapAdapter");
-  const xSwap = await XSwapAdapter.deploy(xSwapRouter, wNativeAddr);
+  const xSwap = await XSwapAdapter.deploy(finalRouter, finalWNative);
   await xSwap.waitForDeployment();
   const xSwapAddress = await xSwap.getAddress();
   console.log(`XSwapAdapter deployed to: ${xSwapAddress}`);

@@ -5,3 +5,8 @@ python-telegram-bot>=20.0
 cryptography
 eth-abi
 requests
+fastapi
+uvicorn
+httpx
+eth-keys
+eth-hash[pycryptodome]

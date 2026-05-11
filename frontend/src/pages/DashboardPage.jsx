@@ -91,6 +91,24 @@ export default function DashboardPage({ account }) {
   const [agentRole, setAgentRole] = useState({ name: 'Unassigned', emoji: '🤖' });
   const [withdrawAmount, setWithdrawAmount] = useState('0.1');
   const [customDeposit, setCustomDeposit] = useState('0.1');
+  const [agentLiveState, setAgentLiveState] = useState({ status: 'IDLE', last_thought: 'System Ready.' });
+
+  // Poll Agent API for real-time thought process
+  useEffect(() => {
+    const pollStatus = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/status');
+        if (res.ok) {
+          const data = await res.json();
+          setAgentLiveState(data);
+        }
+      } catch (e) {
+        console.warn("Agent API not reachable.");
+      }
+    };
+    const interval = setInterval(pollStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const showStatus = (msg, type = 'info') => {
     setStatus({ msg, type });
@@ -371,6 +389,18 @@ export default function DashboardPage({ account }) {
           <p className="text-sm font-bold">{status.msg}</p>
         </div>
       )}
+
+      {/* Agent Live Status Bar */}
+      <div className="glass-card p-4 border-primary/20 bg-primary/5 flex items-center justify-between animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className={`w-2 h-2 rounded-full ${agentLiveState.status === 'THINKING' ? 'bg-amber-500' : (agentLiveState.status === 'IDLE' ? 'bg-green-500' : 'bg-primary')} shadow-[0_0_10px_rgba(59,130,246,0.5)]`}></div>
+          <div>
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Agent Neural Link: {agentLiveState.status}</p>
+            <p className="text-xs text-white/80 font-medium italic">"{agentLiveState.last_thought}"</p>
+          </div>
+        </div>
+        {agentLiveState.status === 'THINKING' && <Loader2 size={16} className="text-amber-500 animate-spin" />}
+      </div>
 
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">

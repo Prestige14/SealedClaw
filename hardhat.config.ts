@@ -25,7 +25,7 @@ const config: HardhatUserConfig = {
     },
     og_mainnet: {
       url: process.env.MAINNET_RPC_URL || "https://evmrpc.0g.ai",
-      chainId: 16601,
+      chainId: 16661,
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
   },

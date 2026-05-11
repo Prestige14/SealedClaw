@@ -2,6 +2,7 @@ import os
 import json
 import time
 import subprocess
+from datetime import datetime
 from dotenv import load_dotenv
 from web3 import Web3
 from web3.exceptions import ContractLogicError
@@ -9,6 +10,31 @@ from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
+
+STATE_FILE = "agent_state.json"
+
+def _update_state(status: str, thought: str = None, action: str = None, confidence: int = None, price: float = None):
+    """Helper to update the shared state file for the FastAPI bridge."""
+    try:
+        # Load existing state to preserve fields if not provided
+        state = {}
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "r") as f:
+                state = json.load(f)
+        
+        state.update({
+            "status": status,
+            "last_update": datetime.now().isoformat()
+        })
+        if thought is not None: state["last_thought"] = thought
+        if action is not None: state["last_action"] = action
+        if confidence is not None: state["confidence"] = confidence
+        if price is not None: state["current_price"] = price
+        
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"[Orchestrator] State update error: {e}")
 
 # =========================================================================
 # HELPER FUNCTIONS
@@ -98,6 +124,7 @@ class OpenClawAgent:
         ]
 
         print(f"[OpenClaw] Analyzing intent using {self.model}...")
+        _update_state("THINKING", thought=f"Analyzing your intent: '{user_prompt}'")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -139,7 +166,10 @@ class OpenClawAgent:
                 return message.content
 
         except Exception as e:
-            print(f"[-] Agent NLP Error: {e}. Forcing fallback execution...")
+            try:
+                print(f"[-] Agent NLP Error: {e}. Forcing fallback execution...")
+            except UnicodeEncodeError:
+                print(f"[-] Agent NLP Error: (Unicode Error). Forcing fallback execution...")
             # Fallback
             skill_name = list(self.skills.keys())[0]
             return self.skills[skill_name].execute(intent=user_prompt)
@@ -157,7 +187,7 @@ def execute_sealed_trade(intent: str):
     print(f"  [SKILL] SEALEDCLAW EXECUTING TRADE")
     print(f"{ '='*60 }\n")
 
-    CHAIN_ID = 16602  # 0G Galileo Testnet — hardcoded for replay protection
+    CHAIN_ID = int(os.getenv("CHAIN_ID", "16602"))  # 0G Galileo Testnet default
 
     # ---------------------------------------------------------
     # 1. SETUP WEB3 & FETCH DYNAMIC NONCE
@@ -297,6 +327,7 @@ def execute_sealed_trade(intent: str):
     output_filename = "tee_payload.json"
     
     print("[2] Triggering TEE Worker...")
+    _update_state("THINKING", thought="TEE Worker is computing strategy and signing payload...")
     try:
         # Pass dynamic nonce and user intent to tee-worker
         cmd = ["python", "tee-worker/main.py", "--output", output_filename, "--nonce", str(current_nonce), "--intent", intent]
@@ -329,7 +360,10 @@ def execute_sealed_trade(intent: str):
         ))
         print("[+] TEE Worker executed successfully.\n")
         print("    --- TEE Worker Console Output ---")
-        print(result.stdout)
+        try:
+            print(result.stdout)
+        except UnicodeEncodeError:
+            print(result.stdout.encode('ascii', 'replace').decode('ascii'))
         print("    ---------------------------------\n")
     except subprocess.CalledProcessError as e:
         print("[-] TEE Worker execution failed!")
@@ -427,6 +461,7 @@ def execute_sealed_trade(intent: str):
         
         if receipt.status == 1:
             print(f"[+] Transaction Confirmed! Block: {receipt.blockNumber}, Gas Used: {receipt.gasUsed}")
+            _update_state("SUCCESS", thought=f"Transaction confirmed! Hash: {web3.to_hex(tx_hash)}")
             return f"SUCCESS: Tx={web3.to_hex(tx_hash)}"
         else:
             print(f"[-] Transaction Reverted. Receipt status: {receipt.status}")
@@ -437,6 +472,7 @@ def execute_sealed_trade(intent: str):
         return f"FAILED: Gas Estimation ({e})"
     except Exception as e:
         print(f"[-] Error while sending transaction: {e}")
+        _update_state("ERROR", thought=f"System Error: {str(e)}")
         return f"FAILED: {e}"
 
 # =========================================================================
@@ -476,8 +512,14 @@ if __name__ == "__main__":
     print("  Initialize OpenClaw SDK (Manual Test Mode)")
     print("============================================================")
     
-    # Simulate a user intent/prompt
-    user_prompt = "Tolong optimasi yield saya hari ini dengan risiko maksimal 5%."
+    # Check if run via service or manual
+    service_intent = os.getenv("SERVICE_INTENT")
+    if service_intent:
+        user_prompt = service_intent
+        print(f"  Running with SERVICE_INTENT: {user_prompt}")
+    else:
+        # Simulate a user intent/prompt
+        user_prompt = "Tolong optimasi yield saya hari ini dengan risiko maksimal 5%."
     
     # Run the Agent autonomously
     result = process_intent(user_prompt)

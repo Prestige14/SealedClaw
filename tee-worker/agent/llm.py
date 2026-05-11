@@ -11,15 +11,74 @@ import os
 from typing import Any
 from openai import OpenAI
 
+def analyze_market_context(
+    current_price: float,
+    previous_memory: dict[str, Any] | None,
+    user_intent: str = "",
+) -> dict[str, Any]:
+    """
+    Perform a deep analysis of the market state, price trend, and user intent.
+    Returns a JSON-compatible dict with trend analysis, sentiment, and confidence.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    last_price = float(previous_memory.get("last_price", 0)) if previous_memory else current_price
+    price_change = ((current_price - last_price) / last_price * 100) if last_price > 0 else 0
+
+    default_result = {
+        "trend": "NEUTRAL" if abs(price_change) < 0.5 else ("BULLISH" if price_change > 0 else "BEARISH"),
+        "sentiment_score": 0.0,
+        "confidence": 50,
+        "size_multiplier": 1.0,
+        "reasoning": "Baseline technical analysis."
+    }
+
+    if not api_key:
+        return default_result
+
+    client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+    
+    prompt = (
+        "You are an expert Crypto Quant Analyst inside a TEE enclave. "
+        "Analyze the following data and return ONLY a JSON object.\n\n"
+        f"DATA:\n"
+        f"- Current Price: ${current_price:.2f}\n"
+        f"- Last Price: ${last_price:.2f}\n"
+        f"- 1-Cycle Change: {price_change:+.2f}%\n"
+        f"- User Intent: '{user_intent}'\n\n"
+        "EXPECTED JSON FORMAT:\n"
+        "{\n"
+        '  "trend": "BULLISH" | "BEARISH" | "NEUTRAL",\n'
+        '  "sentiment_score": float (-1.0 to 1.0),\n'
+        '  "confidence": int (0 to 100),\n'
+        '  "size_multiplier": float (0.5 to 2.0),\n'
+        '  "reasoning": "short explanation"\n'
+        "}"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        import json
+        return json.loads(response.choices[0].message.content.strip())
+    except Exception as e:
+        print(f"[AI] Analysis Error: {e}")
+        return default_result
+
 def generate_ai_rationale(
     technical_decision: str,
     price: float,
     price_change_pct: float | None,
     strategy_name: str,
     user_intent: str = "",
+    market_analysis: dict[str, Any] | None = None,
 ) -> str:
     """
     Generate a professional, contextual rationale using Groq API (Llama 3).
+    Now incorporates the deep market analysis results.
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -30,11 +89,19 @@ def generate_ai_rationale(
         base_url="https://api.groq.com/openai/v1"
     )
     
+    analysis_context = ""
+    if market_analysis:
+        analysis_context = (
+            f"Market Analysis: Trend is {market_analysis.get('trend')}, "
+            f"Confidence: {market_analysis.get('confidence')}%, "
+            f"AI Reasoning: {market_analysis.get('reasoning')}"
+        )
+
     system_prompt = (
         "You are the voice of a sovereign AI trading agent inside a TEE enclave. "
         "Your goal is to explain your trading decision professionally and contextually. "
-        "Keep it concise (1-2 sentences). If the user provided an intent/instruction, "
-        "acknowledge it naturally. If the instruction is in Indonesian, respond in Indonesian."
+        "Explain WHY you made this choice based on technicals and AI analysis. "
+        "Keep it concise (2-3 sentences). If the instruction is in Indonesian, respond in Indonesian."
     )
     
     change_str = f"{price_change_pct:+.2f}%" if price_change_pct is not None else "N/A"
@@ -44,6 +111,7 @@ def generate_ai_rationale(
         f"Current Price: ${price:.2f}\n"
         f"Price Change: {change_str}\n"
         f"Technical Decision: {technical_decision}\n"
+        f"{analysis_context}\n"
         f"User Instruction: '{user_intent}'\n\n"
         "Generate a rationale for this decision."
     )
@@ -55,12 +123,11 @@ def generate_ai_rationale(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_context}
             ],
-            max_tokens=100,
+            max_tokens=150,
             temperature=0.7,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        # Better fallback if API error
         return f"[AI FALLBACK] Memproses '{user_intent}' menggunakan strategi {strategy_name}. Keputusan: {technical_decision} di ${price:.2f}."
 
 def analyze_intent_action(intent: str) -> str:

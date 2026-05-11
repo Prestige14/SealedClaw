@@ -245,7 +245,7 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         address targetDEX,
         bytes   calldata signature,
         uint256 deadline
-    ) external onlyTokenOwner(tokenId) nonReentrant whenNotPaused {
+    ) external nonReentrant whenNotPaused {
 
         // ── 1. Deadline check ────────────────────────────────────────────────
         require(block.timestamp <= deadline, "Transaction expired");
@@ -280,9 +280,9 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
         );
 
         // ── 5. Risk max per trade check ───────────────────────────────────────
-        uint256 userBalance = balances[msg.sender];
-        if (userBalance > 0 && policy.riskMaxPercent > 0) {
-            uint256 maxAllowed = (userBalance * policy.riskMaxPercent) / 10000;
+        uint256 currentVaultBalance = vaultBalances[tokenId];
+        if (currentVaultBalance > 0 && policy.riskMaxPercent > 0) {
+            uint256 maxAllowed = (currentVaultBalance * policy.riskMaxPercent) / 10000;
             require(tradeAmount <= maxAllowed, "Exceeds risk max per trade");
         }
 
@@ -331,14 +331,12 @@ contract PolicyVault is Ownable, ReentrancyGuard, Pausable {
             amountInStrategy = tradeAmount; // Wait, strategy must provide the exact amount of ERC20 to return
         }
 
-        // Call the adapter's swap function. For REDUCE_ONLY we must transfer the ERC-20 to the adapter first?
-        // Wait, for standard swaps, the adapter assumes we've approved it!
-        // We will assume XSwapAdapter does transferFrom, but wait! The ERC20 is held by PolicyVault.
-        // We need to approve the adapter to spend ERC-20! 
+        // Call the adapter's swap function. For REDUCE_ONLY (or ERC20 swaps), 
+        // we transfer the tokens to the adapter first.
         if (tokenIn != address(0) && amountInStrategy > 0) {
-            // We must approve the adapter
-            (bool ok, ) = tokenIn.call(abi.encodeWithSignature("approve(address,uint256)", targetDEX, amountInStrategy));
-            require(ok, "ERC20 approve failed");
+            // We must transfer the tokens to the adapter
+            (bool ok, ) = tokenIn.call(abi.encodeWithSignature("transfer(address,uint256)", targetDEX, amountInStrategy));
+            require(ok, "ERC20 transfer to adapter failed");
         }
 
         // Perform the swap via adapter
