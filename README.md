@@ -1,3 +1,12 @@
+---
+title: SealedClaw Backend
+emoji: 🦀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # SealedClaw — Sovereign iNFT Trading Agent on 0G
 
 > **Official 0G Hackathon Submission**  
