@@ -148,7 +148,7 @@ const MarketplacePage = ({ account }) => {
           <AlertTriangle size={24} className="text-red-400" />
           <div>
             <h4 className="text-red-400 font-bold">Network Error</h4>
-            <p className="text-red-400/60 text-xs">Failed to fetch marketplace listings. Please check your connection to 0G Galileo.</p>
+            <p className="text-red-400/60 text-xs">Failed to fetch marketplace listings. Please check your connection to 0G Aristotle.</p>
           </div>
         </div>
       )}

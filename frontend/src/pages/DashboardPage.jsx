@@ -97,7 +97,7 @@ export default function DashboardPage({ account }) {
   useEffect(() => {
     const pollStatus = async () => {
       try {
-        const res = await fetch('http://localhost:8000/status');
+        const res = await fetch(`${CONFIG.AGENT_API_URL}/status`);
         if (res.ok) {
           const data = await res.json();
           setAgentLiveState(data);
@@ -122,8 +122,8 @@ export default function DashboardPage({ account }) {
       const network = await provider.getNetwork();
       
       // Verify Network
-      if (Number(network.chainId) !== 16602) {
-        console.warn("Not on 0G Galileo Testnet. ChainID:", network.chainId);
+      if (Number(network.chainId) !== 16661) {
+        console.warn("Not on 0G Aristotle Mainnet. ChainID:", network.chainId);
         return;
       }
 
@@ -407,7 +407,7 @@ export default function DashboardPage({ account }) {
         <div>
           <h1 className="text-5xl font-black text-white tracking-tighter mb-2">Command Center</h1>
           <p className="text-gray-500 font-medium uppercase tracking-widest text-xs flex items-center gap-2">
-            <Activity size={14} className="text-primary" /> Sector Galileo // System Nominal
+            <Activity size={14} className="text-primary" /> Sector Aristotle // System Nominal
           </p>
         </div>
         <div className="flex gap-4">

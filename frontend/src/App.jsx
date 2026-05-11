@@ -6,7 +6,7 @@ import MarketplacePage from './pages/MarketplacePage';
 import { ShoppingBag } from 'lucide-react';
 
 // ── CONFIGURATION ─────────────────────────────────────────────────────────────
-const GALILEO_CHAIN_ID = '0x40da'; // 16602
+const ARISTOTLE_CHAIN_ID = '0x4115'; // 16661
 
 function App() {
   const [account, setAccount] = useState('');
@@ -19,18 +19,18 @@ function App() {
       try {
         await window.ethereum.request({
            method: 'wallet_switchEthereumChain',
-           params: [{ chainId: GALILEO_CHAIN_ID }],
+           params: [{ chainId: ARISTOTLE_CHAIN_ID }],
         });
       } catch (switchError) {
         if (switchError.code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: GALILEO_CHAIN_ID,
-              chainName: '0G Galileo Testnet',
+              chainId: ARISTOTLE_CHAIN_ID,
+              chainName: '0G Aristotle Mainnet',
               nativeCurrency: { name: '0G', symbol: '0G', decimals: 18 },
-              rpcUrls: ['https://evmrpc-testnet.0g.ai'],
-              blockExplorerUrls: ['https://chainscan-galileo.0g.ai'],
+              rpcUrls: ['https://rpc.ankr.com/0g_mainnet_evm'],
+              blockExplorerUrls: ['https://chainscan.0g.ai'],
             }],
           });
         }

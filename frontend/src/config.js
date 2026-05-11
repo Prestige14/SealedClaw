@@ -9,5 +9,6 @@ export const CONFIG = {
   TEE_ATTESTATION_REGISTRY: "0x60aC7E3E0e7D498fCa1d7F526BB21F90d1E43D5F",
   CHAIN_ID: "0x4115", // 16661
   RPC_URL: "https://rpc.ankr.com/0g_mainnet_evm",
-  EXPLORER_URL: "https://chainscan.0g.ai"
+  EXPLORER_URL: "https://chainscan.0g.ai",
+  AGENT_API_URL: "http://localhost:8000" // Change this to your Hugging Face URL in Vercel env
 };
