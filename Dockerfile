@@ -15,14 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Expose port for FastAPI
-EXPOSE 8000
+# Expose port for FastAPI (Hugging Face default is 7860)
+EXPOSE 7860
 
 # Set environment variables for Python
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/tee-worker
 
 # Default command: start both the API and the Orchestrator service
-# In a real production setup, we'd use a process manager like supervisord,
-# but for a hackathon demo, a simple shell script or running uvicorn in background works.
-CMD uvicorn tee_api:app --host 0.0.0.0 --port 8000 & python run_service.py --interval 60
+CMD uvicorn tee_api:app --host 0.0.0.0 --port 7860 & python run_service.py --interval 60
