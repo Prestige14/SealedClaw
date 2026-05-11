@@ -8,7 +8,8 @@ export const CONFIG = {
   AGENT_MARKETPLACE: "0x9f822E2aF82344a2790bee0D5C20701A677Ca637",
   TEE_ATTESTATION_REGISTRY: "0x60aC7E3E0e7D498fCa1d7F526BB21F90d1E43D5F",
   CHAIN_ID: "0x4115", // 16661
-  RPC_URL: "https://rpc.ankr.com/0g_mainnet_evm",
+  RPC_URL: "https://evmrpc.0g.ai", // Official Mainnet RPC
+  // RPC_URL: "https://16661.rpc.thirdweb.com", // Alternative
   EXPLORER_URL: "https://chainscan.0g.ai",
   AGENT_API_URL: "https://mavisz-sealedclaw-backend.hf.space" 
 };
