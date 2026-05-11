@@ -10,6 +10,11 @@ RUN apt-get update && apt-get install -y \
 
 # Set up a new user with UID 1000
 RUN useradd -m -u 1000 user
+WORKDIR /app
+
+# Pre-create state file with correct permissions
+RUN touch agent_state.json && chown user:user agent_state.json
+
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
