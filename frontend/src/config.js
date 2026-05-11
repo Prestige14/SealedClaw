@@ -10,5 +10,5 @@ export const CONFIG = {
   CHAIN_ID: "0x4115", // 16661
   RPC_URL: "https://rpc.ankr.com/0g_mainnet_evm",
   EXPLORER_URL: "https://chainscan.0g.ai",
-  AGENT_API_URL: "http://localhost:8000" // Change this to your Hugging Face URL in Vercel env
+  AGENT_API_URL: "https://mavisz-sealedclaw-backend.hf.space" 
 };
