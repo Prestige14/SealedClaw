@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 # Set up a new user with UID 1000
 RUN useradd -m -u 1000 user
+RUN mkdir -p /app && chown user:user /app
 WORKDIR /app
 
 # Pre-create state file with correct permissions

@@ -18,10 +18,10 @@ from typing import Optional
 # Download:         GET  /api/v1/download/{root_hash}
 # ---------------------------------------------------------------------------
 
-# Correct 0G Storage Indexer endpoint for Galileo Testnet
+# Correct 0G Storage Indexer endpoint for Aristotle Mainnet
 DEFAULT_INDEXER_URL = os.getenv(
     "OG_INDEXER_URL",
-    "https://indexer-storage-testnet-turbo.0g.ai"
+    "https://indexer-storage-turbo.0g.ai"
 )
 
 
