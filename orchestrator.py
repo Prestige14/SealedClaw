@@ -260,6 +260,7 @@ def execute_sealed_trade(intent: str):
         target_dex_env = os.getenv("TARGET_DEX_ADDRESS", "0x7530623Cb630AEB93609Ba82c7edb9723fC4dc6F")
         target_dex_checksum = web3.to_checksum_address(target_dex_env)
         
+        is_dex_allowed = any(d.lower() == target_dex_checksum.lower() for d in policy[3])
         token_to_trade = os.getenv("TOKEN_ADDRESS") or os.getenv("WNATIVE_ADDRESS") or "0x1cd0690ff9a693f5ef2dd976660a8dafc81a109c"
         token_to_trade_checksum = web3.to_checksum_address(token_to_trade)
         is_token_allowed = any(t.lower() == token_to_trade_checksum.lower() for t in policy[2])
@@ -272,12 +273,10 @@ def execute_sealed_trade(intent: str):
             new_risk_max = policy[1] if policy[1] > 0 else 500
             new_daily_limit = policy[4] if policy[4] > 0 else web3.to_wei(1, 'ether')
             
-            # Ensure the target DEX and Token are in the lists
+            # Ensure the target DEX and Token are in the lists (vars resolved above)
             new_allowed_dexs = list(set(list(policy[3]) + [target_dex_checksum]))
-            
-            token_to_trade = os.getenv("TOKEN_ADDRESS") or os.getenv("WNATIVE_ADDRESS") or "0x1cd0690ff9a693f5ef2dd976660a8dafc81a109c"
-            token_to_trade_checksum = web3.to_checksum_address(token_to_trade)
             new_allowed_tokens = list(set(list(policy[2]) + [token_to_trade_checksum]))
+
             
             new_policy = (
                 new_max_drawdown,
