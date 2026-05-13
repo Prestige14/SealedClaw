@@ -118,7 +118,7 @@ const OraclePriceFeed = ({ asset = "ETH" }) => {
         <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl flex items-center gap-3">
           <Globe size={16} className="text-blue-400 shrink-0" />
           <p className="text-[10px] text-blue-400/80 font-medium">
-            This price feed is not yet configured on the 0G Aristotle Mainnet.
+            This price feed is currently in Demo/Fallback mode for Aristotle Mainnet.
           </p>
         </div>
       )}
