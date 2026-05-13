@@ -24,20 +24,31 @@ const ExecutionHistory = ({ tokenId }) => {
 
     return events.map(event => {
       try {
+        // Robust extraction of strategyData from the log event
+        let rawStrategyData = null;
+        if (event.args) {
+          rawStrategyData = event.args.strategyData || event.args[1];
+        }
+        
+        if (!rawStrategyData) {
+          console.warn("Skipping log: No strategyData found", event);
+          return null;
+        }
+
         // strategyData format: (string action, uint256 amount, address tokenIn, address tokenOut)
         const abiCoder = new ethers.AbiCoder();
         const [action, amount, tokenIn, tokenOut] = abiCoder.decode(
           ["string", "uint256", "address", "address"],
-          event.args.strategyData
+          rawStrategyData
         );
 
         return {
           id: `${event.transactionHash}-${event.index}`,
           action: action,
           amount: ethers.formatEther(amount),
-          asset: action === "BUY" ? "Wrapped OG" : "0G Native", // Updated to match actual tokens
-          price: "Market", // We don't store price in event, would need oracle history
-          time: event.timeAgo,
+          asset: action === "BUY" ? "Wrapped OG" : "0G Native", 
+          price: "Market", 
+          time: event.timeAgo || "Just now",
           status: "Verified",
           txHash: event.transactionHash
         };
