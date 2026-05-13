@@ -303,6 +303,14 @@ export default function DashboardPage({ account }) {
     updateDashboard();
   }, [tokenId, updateDashboard]);
 
+  // Auto-refresh dashboard data every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      updateDashboard();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [updateDashboard]);
+
   const depositFunds = async (amount) => {
     setLoading(true);
     try {

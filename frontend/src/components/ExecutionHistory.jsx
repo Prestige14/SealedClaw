@@ -82,10 +82,11 @@ const ExecutionHistory = ({ tokenId }) => {
         </div>
         <button 
           onClick={() => refetch()}
-          className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-500 hover:text-white"
+          disabled={isLoading}
+          className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-500 hover:text-white disabled:opacity-30"
           title="Refresh Logs"
         >
-          <RefreshCw size={18} />
+          <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
         </button>
       </div>
 
