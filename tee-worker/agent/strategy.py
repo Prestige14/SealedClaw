@@ -97,7 +97,13 @@ def make_trading_decision(
         market_analysis=market_analysis
     )
 
-    TOKEN_ADDR = os.getenv("TOKEN_ADDRESS", ZERO_ADDRESS)
+    # Use WNATIVE as fallback if TOKEN_ADDRESS is missing or blank
+    _raw_token = (
+        os.getenv("TOKEN_ADDRESS", "").strip()
+        or os.getenv("WNATIVE_ADDRESS", "").strip()
+        or ZERO_ADDRESS
+    )
+    TOKEN_ADDR = _raw_token
     if action == ACTION_BUY:
         token_in, token_out = ZERO_ADDRESS, TOKEN_ADDR
     elif action == ACTION_REDUCE_ONLY:
