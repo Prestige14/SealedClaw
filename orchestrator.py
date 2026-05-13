@@ -187,12 +187,12 @@ def execute_sealed_trade(intent: str):
     print(f"  [SKILL] SEALEDCLAW EXECUTING TRADE")
     print(f"{ '='*60 }\n")
 
-    CHAIN_ID = int(os.getenv("CHAIN_ID", "16602"))  # 0G Galileo Testnet default
-
+    CHAIN_ID = int(os.getenv("CHAIN_ID") or os.getenv("OG_CHAIN_ID") or "16661")
+    
     # ---------------------------------------------------------
     # 1. SETUP WEB3 & FETCH DYNAMIC NONCE
     # ---------------------------------------------------------
-    rpc_url = os.getenv("RPC_URL")
+    rpc_url = os.getenv("RPC_URL") or os.getenv("MAINNET_RPC_URL") or os.getenv("OG_RPC_URL")
     relayer_pk = os.getenv("RELAYER_PRIVATE_KEY")
     policy_vault_address = os.getenv("POLICY_VAULT_ADDRESS")
     token_id_env = int(os.getenv("TOKEN_ID", "0"))

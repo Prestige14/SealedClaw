@@ -13,7 +13,7 @@ RUN useradd -m -u 1000 user
 WORKDIR /app
 
 # Pre-create state file with correct permissions
-RUN touch agent_state.json && chown user:user agent_state.json
+RUN echo "{}" > agent_state.json && chown user:user agent_state.json
 
 USER user
 ENV HOME=/home/user \

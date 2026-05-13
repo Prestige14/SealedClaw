@@ -84,9 +84,14 @@ def validate_environment():
         "TOKEN_ID", 
         "CURRENT_NONCE",
         "TEE_IDENTITY",
-        "OG_RPC_URL",
     ]
     missing = [var for var in required if not os.getenv(var)]
+    
+    # Special check for RPC: prefer OG_RPC_URL, fallback to RPC_URL
+    rpc_url = os.getenv("OG_RPC_URL") or os.getenv("RPC_URL") or os.getenv("MAINNET_RPC_URL")
+    if not rpc_url:
+        missing.append("OG_RPC_URL or RPC_URL")
+
     if missing:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(missing)}\n"
@@ -106,14 +111,14 @@ def validate_environment():
 def verify_rpc_connection():
     """Ping RPC dan verifikasi chain ID sesuai."""
     from web3 import Web3
-    rpc_url = os.getenv("OG_RPC_URL")
+    rpc_url = os.getenv("OG_RPC_URL") or os.getenv("RPC_URL") or os.getenv("MAINNET_RPC_URL")
     w3 = Web3(Web3.HTTPProvider(rpc_url))
     
     if not w3.is_connected():
         raise ConnectionError(f"Cannot connect to RPC: {rpc_url}")
     
     chain_id = w3.eth.chain_id
-    expected = int(os.getenv("OG_CHAIN_ID", "16602"))
+    expected = int(os.getenv("OG_CHAIN_ID") or os.getenv("CHAIN_ID") or "16661")
     if chain_id != expected:
         raise ValueError(f"Wrong chain! Expected {expected}, got {chain_id}")
     
