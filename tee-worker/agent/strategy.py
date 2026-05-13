@@ -13,7 +13,18 @@ from typing import Any
 from agent.strategy_classes import resolve_strategy, StrategyParams
 from agent.llm import generate_ai_rationale, analyze_intent_override, analyze_market_context
 
-# ... (ACTION constants remain the same)
+# Action Constants
+ACTION_HOLD = "HOLD"
+ACTION_BUY = "BUY"
+ACTION_REDUCE_ONLY = "REDUCE_ONLY"
+
+# Simulation Constants
+_SIMULATED_BALANCE_WEI = 1000000000000000000 # 1 ETH
+
+def _load_strategy_params() -> StrategyParams:
+    """Load and resolve strategy parameters from environment."""
+    class_id = int(os.getenv("STRATEGY_CLASS_ID", "2")) # Default: Balanced Merc
+    return resolve_strategy(class_id)
 
 def make_trading_decision(
     median_price: float,
