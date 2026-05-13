@@ -11,6 +11,11 @@ contract SimpleTestAdapter is IDEXAdapter {
         uint256 /*minAmountOut*/,
         address /*recipient*/
     ) external payable override returns (uint256 amountOut) {
+        // Safety: Refund the ETH back to PolicyVault so it can credit the agent back
+        if (msg.value > 0) {
+            (bool ok, ) = msg.sender.call{value: msg.value}("");
+            require(ok, "Refund failed");
+        }
         return amountIn;
     }
 
