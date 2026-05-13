@@ -35,7 +35,7 @@ const ExecutionHistory = ({ tokenId }) => {
           id: `${event.transactionHash}-${event.index}`,
           action: action,
           amount: ethers.formatEther(amount),
-          asset: action === "BUY" ? "vETH" : "0G", // Simplified for demo
+          asset: action === "BUY" ? "Wrapped OG" : "0G Native", // Updated to match actual tokens
           price: "Market", // We don't store price in event, would need oracle history
           time: event.timeAgo,
           status: "Verified",

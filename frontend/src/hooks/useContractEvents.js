@@ -32,7 +32,8 @@ export function useContractEvents(contract, eventName, fromBlock = 0, filterArgs
       return eventsWithTime;
     },
     enabled: !!contract && !!eventName,
-    staleTime: 30000, // 30 seconds
+    staleTime: 5000, // 5 seconds
+    refetchInterval: 5000, // Auto-refresh every 5 seconds
     retry: 2,
     retryDelay: (attempt) => Math.pow(2, attempt) * 1000,
   });
