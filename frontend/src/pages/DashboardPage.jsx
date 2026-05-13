@@ -191,31 +191,18 @@ export default function DashboardPage({ account }) {
       const listing = await mkt.listings(tokenId);
 
       // 4. Token Detection (Real & Virtual)
-      const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, provider);
-      let wethBal = 0n;
-      try { wethBal = await weth.balanceOf(VAULT_ADDRESS); } catch (e) {}
-
-      const mockDexAddress = "0x652EdA0876EF813dC397D01cfAB20457a80c113b";
-      const mockDexAbi = ["function getVirtualBalance(uint256 tokenId, string asset) view returns (uint256)"];
-      const mockDex = new ethers.Contract(mockDexAddress, mockDexAbi, provider);
-      
+      // Since we use SimpleTestAdapter to hold the "position", we read the adapter's balance
       let vEthBal = 0n;
       try {
-        vEthBal = await mockDex.getVirtualBalance(tokenId, "ETH");
-        // Hack: If balance is 0 for Token 0, check Token 1 due to hardcoded bug in MockDEXAdapter.sol
-        if (vEthBal === 0n && (tokenId === "0" || tokenId === 0)) {
-          const vEth1 = await mockDex.getVirtualBalance(1, "ETH");
-          if (vEth1 > 0n) vEthBal = vEth1;
-        }
+        vEthBal = await provider.getBalance(DEX_ADAPTER);
       } catch (e) {
-        console.warn("Failed to fetch virtual balance:", e);
+        console.warn("Failed to fetch adapter balance:", e);
       }
 
       setAgentDetails({ owner, nonce: Number(nonce), isPending: pt.transferInitiatedAt > 0n });
       setVaultBalance(balance);
       setTokenBalances([
-        { name: 'WETH', value: wethBal },
-        { name: 'vETH', value: vEthBal }
+        { name: 'Wrapped OG', value: vEthBal }
       ]);
       setIsListed(listing.isActive);
       
@@ -477,11 +464,10 @@ export default function DashboardPage({ account }) {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   {(() => {
-                    const COLORS = { '0G Native': '#3b82f6', 'vETH': '#f59e0b', 'WETH': '#10b981' };
+                    const COLORS = { '0G Native': '#3b82f6', 'Wrapped OG': '#f59e0b' };
                     const chartData = [
                       { name: '0G Native', value: Number(ethers.formatEther(vaultBalance)) },
-                      { name: 'vETH', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'vETH')?.value || 0n)) },
-                      { name: 'WETH', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'WETH')?.value || 0n)) },
+                      { name: 'Wrapped OG', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'Wrapped OG')?.value || 0n)) },
                     ].filter(d => d.value > 0);
                     return (
                       <Pie
@@ -511,8 +497,7 @@ export default function DashboardPage({ account }) {
             <div className="flex justify-center gap-6 mt-4 flex-wrap">
               {[
                 { name: '0G Native', color: 'bg-blue-500', value: Number(ethers.formatEther(vaultBalance)) },
-                { name: 'vETH', color: 'bg-amber-500', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'vETH')?.value || 0n)) },
-                { name: 'WETH', color: 'bg-green-500', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'WETH')?.value || 0n)) },
+                { name: 'Wrapped OG', color: 'bg-amber-500', value: Number(ethers.formatEther(tokenBalances.find(t => t.name === 'Wrapped OG')?.value || 0n)) },
               ].filter(d => d.value > 0).map(({ name, color }) => (
                 <div key={name} className="flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full ${color}`}></div>
@@ -591,6 +576,43 @@ export default function DashboardPage({ account }) {
                     className="w-full py-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 font-black uppercase tracking-widest text-[10px] hover:bg-red-500/20 transition-all disabled:opacity-30"
                   >
                     {loading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Process Withdrawal'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Withdraw Positions from Adapter */}
+              <div className="glass-card p-8 border-amber-500/10">
+                <div className="flex items-center gap-3 mb-6">
+                  <ArrowDownCircle size={24} className="text-amber-400" />
+                  <h2 className="text-xl font-bold text-white">Withdraw Positions</h2>
+                </div>
+                <div className="space-y-4">
+                  <p className="text-[10px] text-gray-500 uppercase font-medium leading-relaxed">
+                    Withdraw funds that are currently held in the "Position" (DEX Adapter) back to your wallet.
+                  </p>
+                  <button 
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const signer = await provider.getSigner();
+                        const abi = ["function withdrawAll() external"];
+                        const adapter = new ethers.Contract(DEX_ADAPTER, abi, signer);
+                        showStatus("Withdrawing positions...", "info");
+                        const tx = await adapter.withdrawAll();
+                        await tx.wait();
+                        showStatus("Positions withdrawn successfully!", "success");
+                        updateDashboard();
+                      } catch (e) {
+                        showStatus(e.message, "error");
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    disabled={loading || tokenBalances.find(t => t.name === 'Wrapped OG')?.value === 0n}
+                    className="w-full py-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 font-black uppercase tracking-widest text-[10px] hover:bg-amber-500/20 transition-all disabled:opacity-30"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Withdraw All Positions'}
                   </button>
                 </div>
               </div>
