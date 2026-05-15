@@ -69,7 +69,7 @@ graph TD
 
 ### Step 1: Configuration
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Prestige14/SealedClaw
 cd SealedClaw
 cp .env.example .env
 ```
