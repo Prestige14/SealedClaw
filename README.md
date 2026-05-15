@@ -52,9 +52,11 @@ graph TD
 ## 🔧 0G Modules Used & Support
 | 0G Module | Usage in SealedClaw | Support for the Product |
 |---|---|---|
-| **0G EVM (Aristotle)** | Host for all core contracts including `PolicyVault`, `SealedClawAgent`, and `AgentMarketplace`. | Provides a high-performance, modular execution layer where TEE signatures are verified trustlessly and funds are secured. |
+| **0G Chain (EVM)** | Host for all core contracts including `PolicyVault`, `SealedClawAgent`, and `AgentMarketplace`. | Provides a high-performance, modular execution layer where TEE signatures are verified trustlessly and funds are secured. |
 | **0G Storage** | Persisting agent memory (trade history, indicators, and reasoning blobs). | Enables stateful agent memory across trading cycles without the high cost of on-chain storage, ensuring the agent "remembers" context. |
-| **0G Verifiable Compute (TEE)** | Secure execution of the strategy engine and ECDSA signing of trade payloads. | Guarantees that the agent's decision-making logic is private and tamper-proof, preventing operator interference. |
+| **0G Compute** | Secure execution of the strategy engine and ECDSA signing of trade payloads via Python enclave. | Guarantees that the agent's decision-making logic is private and tamper-proof, preventing operator interference. |
+| **Agent ID (iNFT)** | Implementing the ERC-7857 standard for Intelligent NFTs to represent autonomous agents. | Provides a sovereign identity for each agent, allowing them to be owned, traded, and managed as unique digital assets. |
+| **Secure Execution (TEE)** | Deep integration with Trusted Execution Environments for signing verifiable trade proofs. | Ensures end-to-end privacy for the agent's strategy, fulfilling the highest standards of secure DeFi execution. |
 
 ---
 
