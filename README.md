@@ -104,8 +104,11 @@ Open `http://localhost:5173` to view the **Agent Neural Link** and dashboard.
 |---|---|
 | **SealedClawAgent (iNFT)** | `0xD836bC71C9ECAe447F3f323d9C4E982A0ad178D2` |
 | **PolicyVault** | `0xBe9Db7735B06FEa557f3Aa18317eaB229BA6ebC5` |
-| **XSwapAdapter** | `0x701D2037002F20c57217a7B0Cb04104622EF297C` |
+| **StrategyManager** | `0xFAB206535E521be5B24AeEf30b3CB71f7bf21459` |
+| **SimpleTestAdapter (DEX)** | `0x0e0EE41CCbf977f8D54d601309FD8EBcbeAF7A18` |
 | **AgentMarketplace** | `0x9f822E2aF82344a2790bee0D5C20701A677Ca637` |
+| **OracleVerifier** | `0x29b48D4e24c2D9012aD286647632bEec16EF06c2` |
+| **AttestationRegistry** | `0x60aC7E3E0e7D498fCa1d7F526BB21F90d1E43D5F` |
 
 ### Reviewer Instructions
 1.  **Neural Link**: The dashboard features an "Agent Neural Link" status bar that polls the backend API (`/status`) to show real-time "thinking" processes.
