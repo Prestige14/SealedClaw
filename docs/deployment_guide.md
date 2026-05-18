@@ -11,7 +11,7 @@ This guide is intended for hackathon judges and developers who wish to deploy or
 ## 1. Environment Setup
 Clone the repository and install dependencies:
 ```bash
-git clone <repo-url>
+git clone https://github.com/Prestige14/SealedClaw
 cd SealedClaw
 npm install
 pip install -r requirements.txt
